@@ -18,6 +18,15 @@ on:
         description: "Path for the output merged file"
         required: true
         default: "output/merged.mp4"
+      audio_handling:
+        description: "How to handle existing video audio"
+        required: false
+        default: "replace"
+        type: choice
+        options:
+          - "replace"
+          - "mix"
+          - "keep_video"
 
 jobs:
   merge:
@@ -63,14 +72,58 @@ jobs:
           echo "Video: ${{ github.event.inputs.video_path }}"
           echo "Audio: ${{ github.event.inputs.audio_path }}"
           echo "Output: ${{ steps.output.outputs.unique_output }}"
+          echo "Audio handling: ${{ github.event.inputs.audio_handling }}"
           
-          ffmpeg -y \
-                 -i "${{ github.event.inputs.video_path }}" \
-                 -i "${{ github.event.inputs.audio_path }}" \
-                 -c:v copy \
-                 -c:a aac \
-                 -shortest \
-                 "${{ steps.output.outputs.unique_output }}"
+          case "${{ github.event.inputs.audio_handling }}" in
+            "replace")
+              echo "Replacing video audio with new audio..."
+              ffmpeg -y \
+                     -i "${{ github.event.inputs.video_path }}" \
+                     -i "${{ github.event.inputs.audio_path }}" \
+                     -c:v copy \
+                     -c:a aac \
+                     -map 0:v:0 \
+                     -map 1:a:0 \
+                     -shortest \
+                     "${{ steps.output.outputs.unique_output }}"
+              ;;
+            "mix")
+              echo "Mixing video audio with new audio..."
+              ffmpeg -y \
+                     -i "${{ github.event.inputs.video_path }}" \
+                     -i "${{ github.event.inputs.audio_path }}" \
+                     -filter_complex "[0:a][1:a]amix=inputs=2:duration=shortest[a]" \
+                     -map 0:v \
+                     -map "[a]" \
+                     -c:v copy \
+                     -c:a aac \
+                     "${{ steps.output.outputs.unique_output }}"
+              ;;
+            "keep_video")
+              echo "Keeping original video audio, ignoring new audio..."
+              ffmpeg -y \
+                     -i "${{ github.event.inputs.video_path }}" \
+                     -c:v copy \
+                     -c:a aac \
+                     "${{ steps.output.outputs.unique_output }}"
+              ;;
+            *)
+              echo "Unknown audio handling option: ${{ github.event.inputs.audio_handling }}"
+              echo "Defaulting to replace mode..."
+              ffmpeg -y \
+                     -i "${{ github.event.inputs.video_path }}" \
+                     -i "${{ github.event.inputs.audio_path }}" \
+                     -c:v copy \
+                     -c:a aac \
+                     -map 0:v:0 \
+                     -map 1:a:0 \
+                     -shortest \
+                     "${{ steps.output.outputs.unique_output }}"
+              ;;
+          esac
+          
+          echo "Merge completed successfully!"
+          echo "Output file size: $(du -h "${{ steps.output.outputs.unique_output }}" | cut -f1)"
           
           echo "Merge completed successfully!"
           echo "Output file size: $(du -h "${{ steps.output.outputs.unique_output }}" | cut -f1)"
