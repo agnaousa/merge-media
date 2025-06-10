@@ -145,34 +145,34 @@ jobs:
           fi
           
           # Handle audio input - check for base64 data in either audio_base64 or audio_path fields
-          AUDIO_JSON=""
           BASE64_DATA=""
           CONTENT_TYPE="audio/mpeg"
           
           # First check if audio_base64 field has data
           if [ -n "$AUDIO_BASE64" ] && [ "$AUDIO_BASE64" != "" ]; then
-            AUDIO_JSON="$AUDIO_BASE64"
             echo "Processing base64 encoded audio data from audio_base64 field..."
+            # Check if it's JSON format or direct base64
+            if echo "$AUDIO_BASE64" | jq -e '.audio_base64' >/dev/null 2>&1; then
+              # JSON format with base64 data
+              BASE64_DATA=$(echo "$AUDIO_BASE64" | jq -r '.audio_base64 // empty')
+              CONTENT_TYPE=$(echo "$AUDIO_BASE64" | jq -r '.content_type // "audio/mpeg"')
+              echo "Detected JSON format with content type: $CONTENT_TYPE"
+            else
+              # Direct base64 string
+              BASE64_DATA="$AUDIO_BASE64"
+              CONTENT_TYPE="audio/mpeg"
+              echo "Detected direct base64 string, using default content type: $CONTENT_TYPE"
+            fi
           # Then check if audio_path contains JSON with base64 data
           elif echo "$AUDIO_PATH" | jq -e '.audio_base64' >/dev/null 2>&1; then
-            AUDIO_JSON="$AUDIO_PATH"
             echo "Processing base64 encoded audio data from audio_path field (JSON format)..."
+            BASE64_DATA=$(echo "$AUDIO_PATH" | jq -r '.audio_base64 // empty')
+            CONTENT_TYPE=$(echo "$AUDIO_PATH" | jq -r '.content_type // "audio/mpeg"')
           fi
           
-          # If we found JSON data with base64, process it
-          if [ -n "$AUDIO_JSON" ]; then
+          # If we found base64 data, process it
+          if [ -n "$BASE64_DATA" ]; then
             mkdir -p temp
-            
-            # Parse the JSON input to extract base64 data and content type
-            if echo "$AUDIO_JSON" | jq -e . >/dev/null 2>&1; then
-              # Valid JSON format
-              BASE64_DATA=$(echo "$AUDIO_JSON" | jq -r '.audio_base64 // empty')
-              CONTENT_TYPE=$(echo "$AUDIO_JSON" | jq -r '.content_type // "audio/mpeg"')
-            else
-              # Assume it's just the base64 string
-              BASE64_DATA="$AUDIO_JSON"
-              CONTENT_TYPE="audio/mpeg"
-            fi
             
             if [ -z "$BASE64_DATA" ]; then
               echo "Error: No base64 audio data found in input"
