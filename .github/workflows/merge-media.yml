@@ -124,9 +124,6 @@ jobs:
           
           echo "Merge completed successfully!"
           echo "Output file size: $(du -h "${{ steps.output.outputs.unique_output }}" | cut -f1)"
-          
-          echo "Merge completed successfully!"
-          echo "Output file size: $(du -h "${{ steps.output.outputs.unique_output }}" | cut -f1)"
 
       - name: Upload merged file as artifact
         uses: actions/upload-artifact@v4
@@ -139,15 +136,14 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           
-          if git diff --quiet && git diff --staged --quiet; then
-            echo "No changes to commit"
+          # Add the generated file to git
+          git add "${{ steps.output.outputs.unique_output }}"
+          
+          # Check if there are any staged changes
+          if git diff --staged --quiet; then
+            echo "No changes staged for commit (file may already exist or wasn't created)"
           else
-            git add "${{ steps.output.outputs.unique_output }}"
-            if git diff --staged --quiet; then
-              echo "No changes staged for commit"
-            else
-              git commit -m "Add merged video: ${{ steps.output.outputs.unique_output }}"
-              git push
-              echo "Changes committed and pushed successfully"
-            fi
+            git commit -m "Add merged video: ${{ steps.output.outputs.unique_output }}"
+            git push
+            echo "Changes committed and pushed successfully"
           fi
