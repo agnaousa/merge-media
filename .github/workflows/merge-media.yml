@@ -383,34 +383,49 @@ jobs:
               ERROR_MESSAGE="Output file was not created"
             fi
             
-            PAYLOAD=$(cat <<EOF
-          {
-            "status": "$STATUS",
-            "workflow_run_id": "${{ github.run_id }}",
-            "repository": "${{ github.repository }}",
-            "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-            "input": {
-              "video_path": "${{ steps.params.outputs.video_path }}",
-              "audio_path": "${{ steps.params.outputs.audio_path }}",
-              "audio_base64_provided": "${{ steps.params.outputs.audio_base64 != '' && 'true' || 'false' }}",
-              "output_path": "${{ steps.params.outputs.output_path }}",
-              "audio_handling": "${{ steps.params.outputs.audio_handling }}"
-            },
-            "output": {
-              "file_path": "${{ steps.output.outputs.unique_output }}",
-              "file_url": "${{ steps.url.outputs.file_url }}",
-              "raw_url": "${{ steps.url.outputs.raw_url }}",
-              "filename": "${{ steps.url.outputs.filename }}",
-              "file_size": "$FILE_SIZE"
-            },
-            "artifacts": {
-              "artifact_name": "merged-video",
-              "download_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            },
-            "error_message": "$ERROR_MESSAGE"
-          }
-          EOF
-            )
+            # Create JSON payload using jq to properly escape values
+            PAYLOAD=$(jq -n \
+              --arg status "$STATUS" \
+              --arg workflow_run_id "${{ github.run_id }}" \
+              --arg repository "${{ github.repository }}" \
+              --arg timestamp "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+              --arg video_path "${{ steps.params.outputs.video_path }}" \
+              --arg audio_path "${{ steps.params.outputs.audio_path }}" \
+              --arg audio_base64_provided "${{ steps.params.outputs.audio_base64 != '' && 'true' || 'false' }}" \
+              --arg output_path "${{ steps.params.outputs.output_path }}" \
+              --arg audio_handling "${{ steps.params.outputs.audio_handling }}" \
+              --arg file_path "${{ steps.output.outputs.unique_output }}" \
+              --arg file_url "${{ steps.url.outputs.file_url }}" \
+              --arg raw_url "${{ steps.url.outputs.raw_url }}" \
+              --arg filename "${{ steps.url.outputs.filename }}" \
+              --arg file_size "$FILE_SIZE" \
+              --arg download_url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              --arg error_message "$ERROR_MESSAGE" \
+              '{
+                "status": $status,
+                "workflow_run_id": $workflow_run_id,
+                "repository": $repository,
+                "timestamp": $timestamp,
+                "input": {
+                  "video_path": $video_path,
+                  "audio_path": $audio_path,
+                  "audio_base64_provided": $audio_base64_provided,
+                  "output_path": $output_path,
+                  "audio_handling": $audio_handling
+                },
+                "output": {
+                  "file_path": $file_path,
+                  "file_url": $file_url,
+                  "raw_url": $raw_url,
+                  "filename": $filename,
+                  "file_size": $file_size
+                },
+                "artifacts": {
+                  "artifact_name": "merged-video",
+                  "download_url": $download_url
+                },
+                "error_message": $error_message
+              }')
             
             # Send the webhook with retry logic
             RETRY_COUNT=0
@@ -462,24 +477,34 @@ jobs:
           if [ -n "$WEBHOOK_URL" ]; then
             echo "Sending error notification to webhook: $WEBHOOK_URL"
             
-            ERROR_PAYLOAD=$(cat <<EOF
-          {
-            "status": "failed",
-            "workflow_run_id": "${{ github.run_id }}",
-            "repository": "${{ github.repository }}",
-            "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-            "input": {
-              "video_path": "${{ steps.params.outputs.video_path || 'unknown' }}",
-              "audio_path": "${{ steps.params.outputs.audio_path || 'unknown' }}",
-              "audio_base64_provided": "${{ steps.params.outputs.audio_base64 != '' && 'true' || 'false' }}",
-              "output_path": "${{ steps.params.outputs.output_path || 'unknown' }}",
-              "audio_handling": "${{ steps.params.outputs.audio_handling || 'unknown' }}"
-            },
-            "error_message": "Workflow failed during processing. Check the GitHub Actions logs for details.",
-            "logs_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          }
-          EOF
-            )
+            # Create error JSON payload using jq to properly escape values
+            ERROR_PAYLOAD=$(jq -n \
+              --arg status "failed" \
+              --arg workflow_run_id "${{ github.run_id }}" \
+              --arg repository "${{ github.repository }}" \
+              --arg timestamp "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+              --arg video_path "${{ steps.params.outputs.video_path || 'unknown' }}" \
+              --arg audio_path "${{ steps.params.outputs.audio_path || 'unknown' }}" \
+              --arg audio_base64_provided "${{ steps.params.outputs.audio_base64 != '' && 'true' || 'false' }}" \
+              --arg output_path "${{ steps.params.outputs.output_path || 'unknown' }}" \
+              --arg audio_handling "${{ steps.params.outputs.audio_handling || 'unknown' }}" \
+              --arg error_message "Workflow failed during processing. Check the GitHub Actions logs for details." \
+              --arg logs_url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              '{
+                "status": $status,
+                "workflow_run_id": $workflow_run_id,
+                "repository": $repository,
+                "timestamp": $timestamp,
+                "input": {
+                  "video_path": $video_path,
+                  "audio_path": $audio_path,
+                  "audio_base64_provided": $audio_base64_provided,
+                  "output_path": $output_path,
+                  "audio_handling": $audio_handling
+                },
+                "error_message": $error_message,
+                "logs_url": $logs_url
+              }')
             
             curl -X POST \
                  -H "Content-Type: application/json" \
