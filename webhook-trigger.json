@@ -1,0 +1,6 @@
+{
+  "video_path": "https://example.com/video.mp4",
+  "audio_path": "https://example.com/audio.mp3",
+  "output_path": "output/merged.mp4",
+  "audio_handling": "replace"
+}

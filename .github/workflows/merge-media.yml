@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       video_path:
-        description: "Path to the video file"
+        description: "Path to the video file or URL"
         required: true
         default: "input/video.mp4"
       audio_path:
-        description: "Path to the audio file"
+        description: "Path to the audio file or URL"
         required: true
         default: "input/audio.mp3"
       output_path:
@@ -27,6 +27,11 @@ on:
           - "replace"
           - "mix"
           - "keep_video"
+  repository_dispatch:
+    types: [merge-media]
+  push:
+    paths:
+      - 'webhook-trigger.json'
 
 jobs:
   merge:
@@ -35,28 +40,119 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Parse input parameters
+        id: params
+        run: |
+          # Install jq if needed for JSON parsing
+          which jq || sudo apt-get update && sudo apt-get install -y jq
+          
+          # Determine the source of the trigger and extract parameters
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Triggered via workflow_dispatch"
+            echo "video_path=${{ github.event.inputs.video_path }}" >> $GITHUB_OUTPUT
+            echo "audio_path=${{ github.event.inputs.audio_path }}" >> $GITHUB_OUTPUT
+            echo "output_path=${{ github.event.inputs.output_path }}" >> $GITHUB_OUTPUT
+            echo "audio_handling=${{ github.event.inputs.audio_handling }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "Triggered via repository_dispatch (webhook)"
+            echo "video_path=${{ github.event.client_payload.video_path || 'input/video.mp4' }}" >> $GITHUB_OUTPUT
+            echo "audio_path=${{ github.event.client_payload.audio_path || 'input/audio.mp3' }}" >> $GITHUB_OUTPUT
+            echo "output_path=${{ github.event.client_payload.output_path || 'output/merged.mp4' }}" >> $GITHUB_OUTPUT
+            echo "audio_handling=${{ github.event.client_payload.audio_handling || 'replace' }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            echo "Triggered via push to webhook-trigger.json"
+            # Read parameters from the webhook-trigger.json file
+            if [ -f "webhook-trigger.json" ]; then
+              VIDEO_PATH=$(jq -r '.video_path // "input/video.mp4"' webhook-trigger.json)
+              AUDIO_PATH=$(jq -r '.audio_path // "input/audio.mp3"' webhook-trigger.json)
+              OUTPUT_PATH=$(jq -r '.output_path // "output/merged.mp4"' webhook-trigger.json)
+              AUDIO_HANDLING=$(jq -r '.audio_handling // "replace"' webhook-trigger.json)
+              echo "video_path=${VIDEO_PATH}" >> $GITHUB_OUTPUT
+              echo "audio_path=${AUDIO_PATH}" >> $GITHUB_OUTPUT
+              echo "output_path=${OUTPUT_PATH}" >> $GITHUB_OUTPUT
+              echo "audio_handling=${AUDIO_HANDLING}" >> $GITHUB_OUTPUT
+            else
+              echo "webhook-trigger.json not found, using defaults"
+              echo "video_path=input/video.mp4" >> $GITHUB_OUTPUT
+              echo "audio_path=input/audio.mp3" >> $GITHUB_OUTPUT
+              echo "output_path=output/merged.mp4" >> $GITHUB_OUTPUT
+              echo "audio_handling=replace" >> $GITHUB_OUTPUT
+            fi
+          fi
+
       - name: Set up FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Download media files if URLs provided
+        id: download
+        run: |
+          VIDEO_PATH="${{ steps.params.outputs.video_path }}"
+          AUDIO_PATH="${{ steps.params.outputs.audio_path }}"
+          
+          # Function to check if a string is a URL
+          is_url() {
+            echo "$1" | grep -E "^https?://" > /dev/null
+          }
+          
+          # Handle video input
+          if is_url "$VIDEO_PATH"; then
+            echo "Video input is a URL: $VIDEO_PATH"
+            echo "Downloading video file..."
+            mkdir -p temp
+            VIDEO_EXT=$(echo "$VIDEO_PATH" | grep -oE '\.(mp4|avi|mov|mkv|webm|flv)(\?.*)?$' | sed 's/\?.*//' || echo ".mp4")
+            LOCAL_VIDEO_PATH="temp/downloaded_video${VIDEO_EXT}"
+            
+            if curl -L -o "$LOCAL_VIDEO_PATH" "$VIDEO_PATH"; then
+              echo "Video downloaded successfully"
+              echo "local_video_path=$LOCAL_VIDEO_PATH" >> $GITHUB_OUTPUT
+            else
+              echo "Failed to download video from URL"
+              exit 1
+            fi
+          else
+            echo "Video input is a local path: $VIDEO_PATH"
+            echo "local_video_path=$VIDEO_PATH" >> $GITHUB_OUTPUT
+          fi
+          
+          # Handle audio input
+          if is_url "$AUDIO_PATH"; then
+            echo "Audio input is a URL: $AUDIO_PATH"
+            echo "Downloading audio file..."
+            mkdir -p temp
+            AUDIO_EXT=$(echo "$AUDIO_PATH" | grep -oE '\.(mp3|wav|aac|ogg|m4a|flac)(\?.*)?$' | sed 's/\?.*//' || echo ".mp3")
+            LOCAL_AUDIO_PATH="temp/downloaded_audio${AUDIO_EXT}"
+            
+            if curl -L -o "$LOCAL_AUDIO_PATH" "$AUDIO_PATH"; then
+              echo "Audio downloaded successfully"
+              echo "local_audio_path=$LOCAL_AUDIO_PATH" >> $GITHUB_OUTPUT
+            else
+              echo "Failed to download audio from URL"
+              exit 1
+            fi
+          else
+            echo "Audio input is a local path: $AUDIO_PATH"
+            echo "local_audio_path=$AUDIO_PATH" >> $GITHUB_OUTPUT
+          fi
 
       - name: Generate unique output filename
         id: output
         run: |
           TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
           RUN_ID=${{ github.run_id }}
-          BASENAME=$(basename "${{ github.event.inputs.output_path }}" .mp4)
-          DIRNAME=$(dirname "${{ github.event.inputs.output_path }}")
+          BASENAME=$(basename "${{ steps.params.outputs.output_path }}" .mp4)
+          DIRNAME=$(dirname "${{ steps.params.outputs.output_path }}")
           UNIQUE_OUTPUT="${DIRNAME}/${BASENAME}_${TIMESTAMP}_${RUN_ID}.mp4"
           echo "unique_output=${UNIQUE_OUTPUT}" >> $GITHUB_OUTPUT
           echo "Generated unique output path: ${UNIQUE_OUTPUT}"
 
       - name: Validate input files
         run: |
-          if [ ! -f "${{ github.event.inputs.video_path }}" ]; then
-            echo "Error: Video file not found at ${{ github.event.inputs.video_path }}"
+          if [ ! -f "${{ steps.download.outputs.local_video_path }}" ]; then
+            echo "Error: Video file not found at ${{ steps.download.outputs.local_video_path }}"
             exit 1
           fi
-          if [ ! -f "${{ github.event.inputs.audio_path }}" ]; then
-            echo "Error: Audio file not found at ${{ github.event.inputs.audio_path }}"
+          if [ ! -f "${{ steps.download.outputs.local_audio_path }}" ]; then
+            echo "Error: Audio file not found at ${{ steps.download.outputs.local_audio_path }}"
             exit 1
           fi
           echo "Input files validated successfully"
@@ -69,18 +165,20 @@ jobs:
       - name: Merge audio with video
         run: |
           echo "Starting merge process..."
-          echo "Video: ${{ github.event.inputs.video_path }}"
-          echo "Audio: ${{ github.event.inputs.audio_path }}"
+          echo "Video: ${{ steps.params.outputs.video_path }}"
+          echo "Audio: ${{ steps.params.outputs.audio_path }}"
+          echo "Local Video: ${{ steps.download.outputs.local_video_path }}"
+          echo "Local Audio: ${{ steps.download.outputs.local_audio_path }}"
           echo "Output: ${{ steps.output.outputs.unique_output }}"
-          echo "Audio handling: ${{ github.event.inputs.audio_handling }}"
+          echo "Audio handling: ${{ steps.params.outputs.audio_handling }}"
           
-          case "${{ github.event.inputs.audio_handling }}" in
+          case "${{ steps.params.outputs.audio_handling }}" in
             "replace")
               echo "Replacing video audio with new audio..."
-              AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ github.event.inputs.audio_path }}")
+              AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.download.outputs.local_audio_path }}")
               ffmpeg -y \
-                     -i "${{ github.event.inputs.video_path }}" \
-                     -i "${{ github.event.inputs.audio_path }}" \
+                     -i "${{ steps.download.outputs.local_video_path }}" \
+                     -i "${{ steps.download.outputs.local_audio_path }}" \
                      -filter_complex "[0:v]loop=loop=-1:size=32767:start=0[looped_video]; [looped_video]setpts=PTS-STARTPTS[v]" \
                      -map "[v]" \
                      -map 1:a \
@@ -91,10 +189,10 @@ jobs:
               ;;
             "mix")
               echo "Mixing video audio with new audio..."
-              AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ github.event.inputs.audio_path }}")
+              AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.download.outputs.local_audio_path }}")
               ffmpeg -y \
-                     -i "${{ github.event.inputs.video_path }}" \
-                     -i "${{ github.event.inputs.audio_path }}" \
+                     -i "${{ steps.download.outputs.local_video_path }}" \
+                     -i "${{ steps.download.outputs.local_audio_path }}" \
                      -filter_complex "[0:v]loop=loop=-1:size=32767:start=0[looped_video]; [looped_video]setpts=PTS-STARTPTS[v]; [0:a][1:a]amix=inputs=2:duration=longest[a]" \
                      -map "[v]" \
                      -map "[a]" \
@@ -106,18 +204,18 @@ jobs:
             "keep_video")
               echo "Keeping original video audio, ignoring new audio..."
               ffmpeg -y \
-                     -i "${{ github.event.inputs.video_path }}" \
+                     -i "${{ steps.download.outputs.local_video_path }}" \
                      -c:v copy \
                      -c:a aac \
                      "${{ steps.output.outputs.unique_output }}"
               ;;
             *)
-              echo "Unknown audio handling option: ${{ github.event.inputs.audio_handling }}"
+              echo "Unknown audio handling option: ${{ steps.params.outputs.audio_handling }}"
               echo "Defaulting to replace mode..."
-              AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ github.event.inputs.audio_path }}")
+              AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.download.outputs.local_audio_path }}")
               ffmpeg -y \
-                     -i "${{ github.event.inputs.video_path }}" \
-                     -i "${{ github.event.inputs.audio_path }}" \
+                     -i "${{ steps.download.outputs.local_video_path }}" \
+                     -i "${{ steps.download.outputs.local_audio_path }}" \
                      -filter_complex "[0:v]loop=loop=-1:size=32767:start=0[looped_video]; [looped_video]setpts=PTS-STARTPTS[v]" \
                      -map "[v]" \
                      -map 1:a \
