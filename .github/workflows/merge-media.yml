@@ -303,3 +303,27 @@ jobs:
           echo "Generated URLs:"
           echo "File URL: ${FILE_URL}"
           echo "Raw URL: ${RAW_URL}"
+
+      - name: Cleanup old files
+        run: |
+          echo "Cleaning up old output files..."
+          
+          # Clean up temporary files
+          if [ -d "temp" ]; then
+            rm -rf temp
+            echo "Removed temp directory"
+          fi
+          
+          # Remove output files older than 30 days
+          if [ -d "output" ]; then
+            DELETED_COUNT=$(find output -name "*.mp4" -type f -mtime +30 -delete -print | wc -l)
+            echo "Deleted $DELETED_COUNT old output files (older than 30 days)"
+          fi
+          
+          # Commit cleanup if there are changes
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -m "🧹 Auto-cleanup: Remove old files and temp directory [skip ci]"
+            git push
+            echo "Cleanup changes committed"
+          fi
