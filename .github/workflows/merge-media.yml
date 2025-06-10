@@ -84,7 +84,10 @@ jobs:
                      -c:a aac \
                      -map 0:v:0 \
                      -map 1:a:0 \
-                     -shortest \
+                     -filter_complex "[0:v]setpts=PTS-STARTPTS[v]; [1:a]apad[a]" \
+                     -map "[v]" \
+                     -map "[a]" \
+                     -t $(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ github.event.inputs.audio_path }}") \
                      "${{ steps.output.outputs.unique_output }}"
               ;;
             "mix")
@@ -92,11 +95,12 @@ jobs:
               ffmpeg -y \
                      -i "${{ github.event.inputs.video_path }}" \
                      -i "${{ github.event.inputs.audio_path }}" \
-                     -filter_complex "[0:a][1:a]amix=inputs=2:duration=shortest[a]" \
-                     -map 0:v \
+                     -filter_complex "[0:v]setpts=PTS-STARTPTS[v]; [0:a][1:a]amix=inputs=2:duration=longest[a]" \
+                     -map "[v]" \
                      -map "[a]" \
                      -c:v copy \
                      -c:a aac \
+                     -t $(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ github.event.inputs.audio_path }}") \
                      "${{ steps.output.outputs.unique_output }}"
               ;;
             "keep_video")
@@ -117,7 +121,10 @@ jobs:
                      -c:a aac \
                      -map 0:v:0 \
                      -map 1:a:0 \
-                     -shortest \
+                     -filter_complex "[0:v]setpts=PTS-STARTPTS[v]; [1:a]apad[a]" \
+                     -map "[v]" \
+                     -map "[a]" \
+                     -t $(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ github.event.inputs.audio_path }}") \
                      "${{ steps.output.outputs.unique_output }}"
               ;;
           esac
