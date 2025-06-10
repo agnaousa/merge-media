@@ -477,7 +477,7 @@ jobs:
           if [ -n "$WEBHOOK_URL" ]; then
             echo "Sending error notification to webhook: $WEBHOOK_URL"
             
-            # Create error JSON payload using jq to properly escape values
+            # Create JSON payload using jq to properly escape values
             ERROR_PAYLOAD=$(jq -n \
               --arg status "failed" \
               --arg workflow_run_id "${{ github.run_id }}" \
