@@ -1,27 +1,34 @@
 name: Merge Audio and Video (Multipart Form Data)
 
 permissions:
-  contents: write  # ✅ This line gives write access to the repository
+  contents: write
+  actions: write
 
 on:
+  repository_dispatch:
+    types: [merge-media]
   workflow_dispatch:
     inputs:
-      video_path:
-        description: "Path to the video file or URL (for multipart/form-data upload)"
-        required: true
-        default: "input/video.mp4"
-      audio_path:
-        description: "Path to the audio file or URL (ignored if audio_base64 is provided)"
-        required: false
-        default: "input/audio.mp3"
-      audio_base64:
-        description: "Base64 encoded audio data (for multipart/form-data uploads)"
+      video_base64:
+        description: "Base64 encoded video data"
         required: false
         default: ""
-      output_path:
-        description: "Path for the output merged file"
-        required: true
-        default: "output/merged.mp4"
+      audio_base64:
+        description: "Base64 encoded audio data"
+        required: false
+        default: ""
+      video_url:
+        description: "Video URL (if not using base64)"
+        required: false
+        default: ""
+      audio_url:
+        description: "Audio URL (if not using base64)"
+        required: false
+        default: ""
+      output_name:
+        description: "Output filename (without extension)"
+        required: false
+        default: "merged_output"
       audio_handling:
         description: "How to handle existing video audio"
         required: false
@@ -37,268 +44,325 @@ jobs:
   merge:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Parse input parameters
-        id: params
+      - name: Install dependencies
         run: |
-          echo "video_path=${{ github.event.inputs.video_path }}" >> $GITHUB_OUTPUT
-          echo "audio_path=${{ github.event.inputs.audio_path }}" >> $GITHUB_OUTPUT
-          echo "audio_base64=${{ github.event.inputs.audio_base64 }}" >> $GITHUB_OUTPUT
-          echo "output_path=${{ github.event.inputs.output_path }}" >> $GITHUB_OUTPUT
-          echo "audio_handling=${{ github.event.inputs.audio_handling }}" >> $GITHUB_OUTPUT
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg jq curl
 
-      - name: Set up FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
-      - name: Download media files if URLs provided
-        id: download
+      - name: Parse input data
+        id: parse
         run: |
-          VIDEO_PATH="${{ steps.params.outputs.video_path }}"
-          AUDIO_PATH="${{ steps.params.outputs.audio_path }}"
-          AUDIO_BASE64="${{ steps.params.outputs.audio_base64 }}"
+          # Set default values
+          VIDEO_BASE64=""
+          AUDIO_BASE64=""
+          VIDEO_URL=""
+          AUDIO_URL=""
+          OUTPUT_NAME="merged_output"
+          AUDIO_HANDLING="replace"
           
-          # Function to check if a string is a URL
-          is_url() {
-            echo "$1" | grep -E "^https?://" > /dev/null
-          }
-          
-          # Handle video input
-          if is_url "$VIDEO_PATH"; then
-            echo "Video input is a URL: $VIDEO_PATH"
-            echo "Downloading video file..."
-            mkdir -p temp
-            VIDEO_EXT=$(echo "$VIDEO_PATH" | grep -oE '\.(mp4|avi|mov|mkv|webm|flv)(\?.*)?$' | sed 's/\?.*//' || echo ".mp4")
-            LOCAL_VIDEO_PATH="temp/downloaded_video${VIDEO_EXT}"
+          # Check if this is a repository_dispatch event
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "Processing repository_dispatch event..."
             
-            if curl -L -o "$LOCAL_VIDEO_PATH" "$VIDEO_PATH"; then
-              echo "Video downloaded successfully"
-              echo "local_video_path=$LOCAL_VIDEO_PATH" >> $GITHUB_OUTPUT
-            else
-              echo "Failed to download video from URL"
-              exit 1
+            # Parse client_payload for multipart data
+            if [ -n "${{ github.event.client_payload.video_base64 }}" ]; then
+              VIDEO_BASE64="${{ github.event.client_payload.video_base64 }}"
+              echo "Found video base64 data in payload"
+            fi
+            
+            if [ -n "${{ github.event.client_payload.audio_base64 }}" ]; then
+              AUDIO_BASE64="${{ github.event.client_payload.audio_base64 }}"
+              echo "Found audio base64 data in payload"
+            fi
+            
+            if [ -n "${{ github.event.client_payload.video_url }}" ]; then
+              VIDEO_URL="${{ github.event.client_payload.video_url }}"
+              echo "Found video URL in payload"
+            fi
+            
+            if [ -n "${{ github.event.client_payload.audio_url }}" ]; then
+              AUDIO_URL="${{ github.event.client_payload.audio_url }}"
+              echo "Found audio URL in payload"
+            fi
+            
+            if [ -n "${{ github.event.client_payload.output_name }}" ]; then
+              OUTPUT_NAME="${{ github.event.client_payload.output_name }}"
+            fi
+            
+            if [ -n "${{ github.event.client_payload.audio_handling }}" ]; then
+              AUDIO_HANDLING="${{ github.event.client_payload.audio_handling }}"
             fi
           else
-            echo "Video input is a local path: $VIDEO_PATH"
-            echo "local_video_path=$VIDEO_PATH" >> $GITHUB_OUTPUT
+            echo "Processing workflow_dispatch event..."
+            
+            # Use workflow inputs
+            VIDEO_BASE64="${{ github.event.inputs.video_base64 }}"
+            AUDIO_BASE64="${{ github.event.inputs.audio_base64 }}"
+            VIDEO_URL="${{ github.event.inputs.video_url }}"
+            AUDIO_URL="${{ github.event.inputs.audio_url }}"
+            OUTPUT_NAME="${{ github.event.inputs.output_name }}"
+            AUDIO_HANDLING="${{ github.event.inputs.audio_handling }}"
           fi
           
-          # Handle audio input - check for base64 data in audio_base64 field
-          BASE64_DATA=""
-          CONTENT_TYPE="audio/mpeg"
+          # Export variables for later steps
+          echo "video_base64=${VIDEO_BASE64}" >> $GITHUB_OUTPUT
+          echo "audio_base64=${AUDIO_BASE64}" >> $GITHUB_OUTPUT
+          echo "video_url=${VIDEO_URL}" >> $GITHUB_OUTPUT
+          echo "audio_url=${AUDIO_URL}" >> $GITHUB_OUTPUT
+          echo "output_name=${OUTPUT_NAME}" >> $GITHUB_OUTPUT
+          echo "audio_handling=${AUDIO_HANDLING}" >> $GITHUB_OUTPUT
           
-          # Check if audio_base64 field has data (direct base64 string only)
-          if [ -n "$AUDIO_BASE64" ] && [ "$AUDIO_BASE64" != "" ]; then
-            echo "Processing base64 encoded audio data from audio_base64 field..."
-            BASE64_DATA="$AUDIO_BASE64"
-            echo "Using direct base64 string with default content type: $CONTENT_TYPE"
-          fi
+          echo "Parsed input parameters successfully"
+
+      - name: Prepare media files
+        id: prepare
+        run: |
+          mkdir -p temp
           
-          # If we found base64 data, process it
-          if [ -n "$BASE64_DATA" ]; then
-            mkdir -p temp
+          # Process video input
+          if [ -n "${{ steps.parse.outputs.video_base64 }}" ] && [ "${{ steps.parse.outputs.video_base64 }}" != "" ]; then
+            echo "Processing base64 video data..."
             
-            if [ -z "$BASE64_DATA" ]; then
-              echo "Error: No base64 audio data found in input"
-              exit 1
-            fi
-            
-            # Determine file extension from content type
-            case "$CONTENT_TYPE" in
-              "audio/mpeg"|"audio/mp3")
-                AUDIO_EXT=".mp3"
-                ;;
-              "audio/wav"|"audio/wave")
-                AUDIO_EXT=".wav"
-                ;;
-              "audio/aac")
-                AUDIO_EXT=".aac"
-                ;;
-              "audio/ogg")
-                AUDIO_EXT=".ogg"
-                ;;
-              "audio/m4a")
-                AUDIO_EXT=".m4a"
-                ;;
-              "audio/flac")
-                AUDIO_EXT=".flac"
-                ;;
-              *)
-                echo "Warning: Unknown content type '$CONTENT_TYPE', defaulting to .mp3"
-                AUDIO_EXT=".mp3"
-                ;;
+            # Detect video format from base64 header
+            HEADER=$(echo "${{ steps.parse.outputs.video_base64 }}" | head -c 20)
+            case "$HEADER" in
+              *"AAAAIGZ"*|*"ftypmp4"*) VIDEO_EXT="mp4" ;;
+              *"AAAAFGZ"*) VIDEO_EXT="mov" ;;
+              *"1a45dfa3"*) VIDEO_EXT="mkv" ;;
+              *) VIDEO_EXT="mp4" ;; # default
             esac
             
-            LOCAL_AUDIO_PATH="temp/decoded_audio${AUDIO_EXT}"
+            VIDEO_FILE="temp/input_video.${VIDEO_EXT}"
+            echo "${{ steps.parse.outputs.video_base64 }}" | base64 -d > "$VIDEO_FILE"
             
-            # Decode base64 data to file
-            if echo "$BASE64_DATA" | base64 -d > "$LOCAL_AUDIO_PATH"; then
-              # Verify the file was created and has content
-              if [ -s "$LOCAL_AUDIO_PATH" ]; then
-                echo "Base64 audio decoded successfully"
-                echo "Content type: $CONTENT_TYPE"
-                echo "File size: $(du -h "$LOCAL_AUDIO_PATH" | cut -f1)"
-                echo "local_audio_path=$LOCAL_AUDIO_PATH" >> $GITHUB_OUTPUT
-              else
-                echo "Error: Decoded audio file is empty"
-                exit 1
-              fi
-            else
-              echo "Error: Failed to decode base64 audio data"
+            if [ ! -s "$VIDEO_FILE" ]; then
+              echo "Error: Failed to decode video base64 data"
               exit 1
             fi
-          elif is_url "$AUDIO_PATH"; then
-            echo "Audio input is a URL: $AUDIO_PATH"
-            echo "Downloading audio file..."
-            mkdir -p temp
-            AUDIO_EXT=$(echo "$AUDIO_PATH" | grep -oE '\.(mp3|wav|aac|ogg|m4a|flac)(\?.*)?$' | sed 's/\?.*//' || echo ".mp3")
-            LOCAL_AUDIO_PATH="temp/downloaded_audio${AUDIO_EXT}"
             
-            if curl -L -o "$LOCAL_AUDIO_PATH" "$AUDIO_PATH"; then
-              echo "Audio downloaded successfully"
-              echo "local_audio_path=$LOCAL_AUDIO_PATH" >> $GITHUB_OUTPUT
-            else
-              echo "Failed to download audio from URL"
+            echo "Video decoded successfully ($(du -h "$VIDEO_FILE" | cut -f1))"
+            echo "video_file=${VIDEO_FILE}" >> $GITHUB_OUTPUT
+            
+          elif [ -n "${{ steps.parse.outputs.video_url }}" ] && [ "${{ steps.parse.outputs.video_url }}" != "" ]; then
+            echo "Downloading video from URL..."
+            
+            VIDEO_EXT=$(echo "${{ steps.parse.outputs.video_url }}" | grep -oE '\.(mp4|avi|mov|mkv|webm)(\?.*)?$' | sed 's/\?.*//' | sed 's/\.//' || echo "mp4")
+            VIDEO_FILE="temp/input_video.${VIDEO_EXT}"
+            
+            if ! curl -L -f -o "$VIDEO_FILE" "${{ steps.parse.outputs.video_url }}"; then
+              echo "Error: Failed to download video from URL"
               exit 1
             fi
+            
+            echo "Video downloaded successfully ($(du -h "$VIDEO_FILE" | cut -f1))"
+            echo "video_file=${VIDEO_FILE}" >> $GITHUB_OUTPUT
           else
-            echo "Audio input is a local path: $AUDIO_PATH"
-            echo "local_audio_path=$AUDIO_PATH" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Generate unique output filename
-        id: output
-        run: |
-          TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-          RUN_ID=${{ github.run_id }}
-          BASENAME=$(basename "${{ steps.params.outputs.output_path }}" .mp4)
-          DIRNAME=$(dirname "${{ steps.params.outputs.output_path }}")
-          UNIQUE_OUTPUT="${DIRNAME}/${BASENAME}_${TIMESTAMP}_${RUN_ID}.mp4"
-          echo "unique_output=${UNIQUE_OUTPUT}" >> $GITHUB_OUTPUT
-          echo "Generated unique output path: ${UNIQUE_OUTPUT}"
-
-      - name: Validate input files
-        run: |
-          if [ ! -f "${{ steps.download.outputs.local_video_path }}" ]; then
-            echo "Error: Video file not found at ${{ steps.download.outputs.local_video_path }}"
+            echo "Error: No video input provided (base64 or URL)"
             exit 1
           fi
-          if [ ! -f "${{ steps.download.outputs.local_audio_path }}" ]; then
-            echo "Error: Audio file not found at ${{ steps.download.outputs.local_audio_path }}"
-            exit 1
-          fi
-          echo "Input files validated successfully"
-
-      - name: Create output directory
-        run: |
-          mkdir -p "$(dirname "${{ steps.output.outputs.unique_output }}")"
-          echo "Output directory created: $(dirname "${{ steps.output.outputs.unique_output }}")"
-
-      - name: Merge audio with video
-        run: |
-          echo "Starting merge process..."
-          echo "Video: ${{ steps.params.outputs.video_path }}"
-          echo "Audio: ${{ steps.params.outputs.audio_path }}"
-          echo "Local Video: ${{ steps.download.outputs.local_video_path }}"
-          echo "Local Audio: ${{ steps.download.outputs.local_audio_path }}"
-          echo "Output: ${{ steps.output.outputs.unique_output }}"
-          echo "Audio handling: ${{ steps.params.outputs.audio_handling }}"
           
-          case "${{ steps.params.outputs.audio_handling }}" in
+          # Process audio input
+          if [ -n "${{ steps.parse.outputs.audio_base64 }}" ] && [ "${{ steps.parse.outputs.audio_base64 }}" != "" ]; then
+            echo "Processing base64 audio data..."
+            
+            # Detect audio format from base64 header
+            HEADER=$(echo "${{ steps.parse.outputs.audio_base64 }}" | head -c 20)
+            case "$HEADER" in
+              *"ID3"*|*"/+MYQ"*) AUDIO_EXT="mp3" ;;
+              *"RIFF"*) AUDIO_EXT="wav" ;;
+              *"fLaC"*) AUDIO_EXT="flac" ;;
+              *"OggS"*) AUDIO_EXT="ogg" ;;
+              *) AUDIO_EXT="mp3" ;; # default
+            esac
+            
+            AUDIO_FILE="temp/input_audio.${AUDIO_EXT}"
+            echo "${{ steps.parse.outputs.audio_base64 }}" | base64 -d > "$AUDIO_FILE"
+            
+            if [ ! -s "$AUDIO_FILE" ]; then
+              echo "Error: Failed to decode audio base64 data"
+              exit 1
+            fi
+            
+            echo "Audio decoded successfully ($(du -h "$AUDIO_FILE" | cut -f1))"
+            echo "audio_file=${AUDIO_FILE}" >> $GITHUB_OUTPUT
+            
+          elif [ -n "${{ steps.parse.outputs.audio_url }}" ] && [ "${{ steps.parse.outputs.audio_url }}" != "" ]; then
+            echo "Downloading audio from URL..."
+            
+            AUDIO_EXT=$(echo "${{ steps.parse.outputs.audio_url }}" | grep -oE '\.(mp3|wav|aac|ogg|flac)(\?.*)?$' | sed 's/\?.*//' | sed 's/\.//' || echo "mp3")
+            AUDIO_FILE="temp/input_audio.${AUDIO_EXT}"
+            
+            if ! curl -L -f -o "$AUDIO_FILE" "${{ steps.parse.outputs.audio_url }}"; then
+              echo "Error: Failed to download audio from URL"
+              exit 1
+            fi
+            
+            echo "Audio downloaded successfully ($(du -h "$AUDIO_FILE" | cut -f1))"
+            echo "audio_file=${AUDIO_FILE}" >> $GITHUB_OUTPUT
+          else
+            echo "Error: No audio input provided (base64 or URL)"
+            exit 1
+          fi
+
+      - name: Validate media files
+        run: |
+          echo "Validating input files..."
+          
+          # Check video file
+          if ! ffprobe -v quiet -show_entries format=duration "${{ steps.prepare.outputs.video_file }}" 2>/dev/null; then
+            echo "Error: Invalid video file"
+            exit 1
+          fi
+          
+          # Check audio file
+          if ! ffprobe -v quiet -show_entries format=duration "${{ steps.prepare.outputs.audio_file }}" 2>/dev/null; then
+            echo "Error: Invalid audio file"
+            exit 1
+          fi
+          
+          # Get durations
+          VIDEO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.prepare.outputs.video_file }}")
+          AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.prepare.outputs.audio_file }}")
+          
+          echo "Video duration: ${VIDEO_DURATION}s"
+          echo "Audio duration: ${AUDIO_DURATION}s"
+          echo "Files validated successfully"
+
+      - name: Merge media files
+        id: merge
+        run: |
+          # Create output directory
+          mkdir -p output
+          
+          TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+          OUTPUT_FILE="output/${{ steps.parse.outputs.output_name }}_${TIMESTAMP}.mp4"
+          
+          echo "Starting merge process..."
+          echo "Video: ${{ steps.prepare.outputs.video_file }}"
+          echo "Audio: ${{ steps.prepare.outputs.audio_file }}"
+          echo "Output: ${OUTPUT_FILE}"
+          echo "Audio handling: ${{ steps.parse.outputs.audio_handling }}"
+          
+          # Get audio duration for video looping
+          AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.prepare.outputs.audio_file }}")
+          
+          case "${{ steps.parse.outputs.audio_handling }}" in
             "replace")
               echo "Replacing video audio with new audio..."
-              AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.download.outputs.local_audio_path }}")
               ffmpeg -y \
-                     -i "${{ steps.download.outputs.local_video_path }}" \
-                     -i "${{ steps.download.outputs.local_audio_path }}" \
-                     -filter_complex "[0:v]loop=loop=-1:size=32767:start=0[looped_video]; [looped_video]setpts=PTS-STARTPTS[v]" \
+                     -i "${{ steps.prepare.outputs.video_file }}" \
+                     -i "${{ steps.prepare.outputs.audio_file }}" \
+                     -filter_complex "[0:v]loop=loop=-1:size=32767:start=0[v]" \
                      -map "[v]" \
                      -map 1:a \
-                     -c:v libx264 \
-                     -c:a aac \
+                     -c:v libx264 -preset medium -crf 23 \
+                     -c:a aac -b:a 128k \
                      -t ${AUDIO_DURATION} \
-                     "${{ steps.output.outputs.unique_output }}"
+                     -movflags +faststart \
+                     "$OUTPUT_FILE"
               ;;
             "mix")
               echo "Mixing video audio with new audio..."
-              AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.download.outputs.local_audio_path }}")
               ffmpeg -y \
-                     -i "${{ steps.download.outputs.local_video_path }}" \
-                     -i "${{ steps.download.outputs.local_audio_path }}" \
-                     -filter_complex "[0:v]loop=loop=-1:size=32767:start=0[looped_video]; [looped_video]setpts=PTS-STARTPTS[v]; [0:a][1:a]amix=inputs=2:duration=longest[a]" \
+                     -i "${{ steps.prepare.outputs.video_file }}" \
+                     -i "${{ steps.prepare.outputs.audio_file }}" \
+                     -filter_complex "[0:v]loop=loop=-1:size=32767:start=0[v]; [0:a][1:a]amix=inputs=2:duration=longest:weights=0.5,0.5[a]" \
                      -map "[v]" \
                      -map "[a]" \
-                     -c:v libx264 \
-                     -c:a aac \
+                     -c:v libx264 -preset medium -crf 23 \
+                     -c:a aac -b:a 128k \
                      -t ${AUDIO_DURATION} \
-                     "${{ steps.output.outputs.unique_output }}"
+                     -movflags +faststart \
+                     "$OUTPUT_FILE"
               ;;
             "keep_video")
-              echo "Keeping original video audio, ignoring new audio..."
+              echo "Keeping original video audio..."
               ffmpeg -y \
-                     -i "${{ steps.download.outputs.local_video_path }}" \
-                     -c:v copy \
-                     -c:a aac \
-                     "${{ steps.output.outputs.unique_output }}"
+                     -i "${{ steps.prepare.outputs.video_file }}" \
+                     -c:v libx264 -preset medium -crf 23 \
+                     -c:a aac -b:a 128k \
+                     -movflags +faststart \
+                     "$OUTPUT_FILE"
               ;;
             *)
-              echo "Unknown audio handling option: ${{ steps.params.outputs.audio_handling }}"
-              echo "Defaulting to replace mode..."
-              AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.download.outputs.local_audio_path }}")
+              echo "Unknown audio handling option, defaulting to replace..."
               ffmpeg -y \
-                     -i "${{ steps.download.outputs.local_video_path }}" \
-                     -i "${{ steps.download.outputs.local_audio_path }}" \
-                     -filter_complex "[0:v]loop=loop=-1:size=32767:start=0[looped_video]; [looped_video]setpts=PTS-STARTPTS[v]" \
+                     -i "${{ steps.prepare.outputs.video_file }}" \
+                     -i "${{ steps.prepare.outputs.audio_file }}" \
+                     -filter_complex "[0:v]loop=loop=-1:size=32767:start=0[v]" \
                      -map "[v]" \
                      -map 1:a \
-                     -c:v libx264 \
-                     -c:a aac \
+                     -c:v libx264 -preset medium -crf 23 \
+                     -c:a aac -b:a 128k \
                      -t ${AUDIO_DURATION} \
-                     "${{ steps.output.outputs.unique_output }}"
+                     -movflags +faststart \
+                     "$OUTPUT_FILE"
               ;;
           esac
           
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "Error: Merge failed - output file not created"
+            exit 1
+          fi
+          
+          echo "output_file=${OUTPUT_FILE}" >> $GITHUB_OUTPUT
           echo "Merge completed successfully!"
-          echo "Output file size: $(du -h "${{ steps.output.outputs.unique_output }}" | cut -f1)"
+          echo "Output file size: $(du -h "$OUTPUT_FILE" | cut -f1)"
 
-      - name: Upload merged file as artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: merged-video
-          path: ${{ steps.output.outputs.unique_output }}
+          name: merged-video-${{ github.run_id }}
+          path: ${{ steps.merge.outputs.output_file }}
+          retention-days: 30
 
-      - name: Commit merged file
+      - name: Commit and push output
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           
-          # Add the generated file to git
-          git add "${{ steps.output.outputs.unique_output }}"
+          git add "${{ steps.merge.outputs.output_file }}"
           
-          # Check if there are any staged changes
           if git diff --staged --quiet; then
-            echo "No changes staged for commit (file may already exist or wasn't created)"
+            echo "No changes to commit"
           else
-            git commit -m "Add merged video: ${{ steps.output.outputs.unique_output }}"
+            git commit -m "Add merged video: $(basename '${{ steps.merge.outputs.output_file }}')"
             git push
-            echo "Changes committed and pushed successfully"
+            echo "Output file committed and pushed successfully"
           fi
 
-      - name: Generate output URL
-        id: url
+      - name: Generate access URLs
+        id: urls
         run: |
-          # Generate the URL to access the output file
-          OUTPUT_FILE="${{ steps.output.outputs.unique_output }}"
+          OUTPUT_FILE="${{ steps.merge.outputs.output_file }}"
+          FILENAME=$(basename "$OUTPUT_FILE")
+          
+          # GitHub URLs
           REPO_URL="https://github.com/${{ github.repository }}"
           BRANCH="${{ github.ref_name }}"
           FILE_URL="${REPO_URL}/blob/${BRANCH}/${OUTPUT_FILE}"
           RAW_URL="https://raw.githubusercontent.com/${{ github.repository }}/${BRANCH}/${OUTPUT_FILE}"
           
+          # Artifact URL (temporary)
+          ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          
+          echo "filename=${FILENAME}" >> $GITHUB_OUTPUT
           echo "file_url=${FILE_URL}" >> $GITHUB_OUTPUT
           echo "raw_url=${RAW_URL}" >> $GITHUB_OUTPUT
-          echo "filename=$(basename "${OUTPUT_FILE}")" >> $GITHUB_OUTPUT
+          echo "artifact_url=${ARTIFACT_URL}" >> $GITHUB_OUTPUT
           
-          echo "Generated URLs:"
-          echo "File URL: ${FILE_URL}"
-          echo "Raw URL: ${RAW_URL}"
+          echo "=== MERGE COMPLETE ==="
+          echo "Filename: ${FILENAME}"
+          echo "GitHub File: ${FILE_URL}"
+          echo "Direct Download: ${RAW_URL}"
+          echo "Artifact: ${ARTIFACT_URL}"
+          echo "======================"
+
+      - name: Cleanup temporary files
+        if: always()
+        run: |
+          rm -rf temp/
+          echo "Temporary files cleaned up"
