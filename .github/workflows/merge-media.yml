@@ -29,6 +29,17 @@ jobs:
       - name: Set up FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
+      - name: Generate unique output filename
+        id: output
+        run: |
+          TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+          RUN_ID=${{ github.run_id }}
+          BASENAME=$(basename "${{ github.event.inputs.output_path }}" .mp4)
+          DIRNAME=$(dirname "${{ github.event.inputs.output_path }}")
+          UNIQUE_OUTPUT="${DIRNAME}/${BASENAME}_${TIMESTAMP}_${RUN_ID}.mp4"
+          echo "unique_output=${UNIQUE_OUTPUT}" >> $GITHUB_OUTPUT
+          echo "Generated unique output path: ${UNIQUE_OUTPUT}"
+
       - name: Validate input files
         run: |
           if [ ! -f "${{ github.event.inputs.video_path }}" ]; then
@@ -43,15 +54,15 @@ jobs:
 
       - name: Create output directory
         run: |
-          mkdir -p "$(dirname "${{ github.event.inputs.output_path }}")"
-          echo "Output directory created: $(dirname "${{ github.event.inputs.output_path }}")"
+          mkdir -p "$(dirname "${{ steps.output.outputs.unique_output }}")"
+          echo "Output directory created: $(dirname "${{ steps.output.outputs.unique_output }}")"
 
       - name: Merge audio with video
         run: |
           echo "Starting merge process..."
           echo "Video: ${{ github.event.inputs.video_path }}"
           echo "Audio: ${{ github.event.inputs.audio_path }}"
-          echo "Output: ${{ github.event.inputs.output_path }}"
+          echo "Output: ${{ steps.output.outputs.unique_output }}"
           
           ffmpeg -y \
                  -i "${{ github.event.inputs.video_path }}" \
@@ -59,16 +70,16 @@ jobs:
                  -c:v copy \
                  -c:a aac \
                  -shortest \
-                 "${{ github.event.inputs.output_path }}"
+                 "${{ steps.output.outputs.unique_output }}"
           
           echo "Merge completed successfully!"
-          echo "Output file size: $(du -h "${{ github.event.inputs.output_path }}" | cut -f1)"
+          echo "Output file size: $(du -h "${{ steps.output.outputs.unique_output }}" | cut -f1)"
 
       - name: Upload merged file as artifact
         uses: actions/upload-artifact@v4
         with:
           name: merged-video
-          path: ${{ github.event.inputs.output_path }}
+          path: ${{ steps.output.outputs.unique_output }}
 
       - name: Commit merged file
         run: |
@@ -78,11 +89,11 @@ jobs:
           if git diff --quiet && git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git add "${{ github.event.inputs.output_path }}"
+            git add "${{ steps.output.outputs.unique_output }}"
             if git diff --staged --quiet; then
               echo "No changes staged for commit"
             else
-              git commit -m "Add merged video: ${{ github.event.inputs.output_path }}"
+              git commit -m "Add merged video: ${{ steps.output.outputs.unique_output }}"
               git push
               echo "Changes committed and pushed successfully"
             fi
