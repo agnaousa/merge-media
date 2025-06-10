@@ -1,4 +1,4 @@
-name: Merge Audio and Video
+name: Merge Audio and Video (Multipart Form Data)
 
 permissions:
   contents: write  # ✅ This line gives write access to the repository
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       video_path:
-        description: "Path to the video file or URL"
+        description: "Path to the video file or URL (for multipart/form-data upload)"
         required: true
         default: "input/video.mp4"
       audio_path:
@@ -15,7 +15,7 @@ on:
         required: false
         default: "input/audio.mp3"
       audio_base64:
-        description: "Base64 encoded audio data (direct string format)"
+        description: "Base64 encoded audio data (for multipart/form-data uploads)"
         required: false
         default: ""
       output_path:
@@ -31,15 +31,7 @@ on:
           - "replace"
           - "mix"
           - "keep_video"
-      webhook_url:
-        description: "Optional webhook URL to notify when processing is complete"
-        required: false
-        default: ""
-  repository_dispatch:
-    types: [merge-media]
-  push:
-    paths:
-      - 'webhook-trigger.json'
+
 
 jobs:
   merge:
@@ -51,63 +43,11 @@ jobs:
       - name: Parse input parameters
         id: params
         run: |
-          # Install jq if needed for JSON parsing
-          which jq || sudo apt-get update && sudo apt-get install -y jq
-          
-          # Determine the source of the trigger and extract parameters
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "Triggered via workflow_dispatch"
-            echo "video_path=${{ github.event.inputs.video_path }}" >> $GITHUB_OUTPUT
-            echo "audio_path=${{ github.event.inputs.audio_path }}" >> $GITHUB_OUTPUT
-            echo "audio_base64=${{ github.event.inputs.audio_base64 }}" >> $GITHUB_OUTPUT
-            echo "output_path=${{ github.event.inputs.output_path }}" >> $GITHUB_OUTPUT
-            echo "audio_handling=${{ github.event.inputs.audio_handling }}" >> $GITHUB_OUTPUT
-            echo "webhook_url=${{ github.event.inputs.webhook_url }}" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            echo "Triggered via repository_dispatch (webhook)"
-            # Check if data is in client_payload (standard format) or direct fields (custom format)
-            if [ -n "${{ github.event.client_payload.video_path || github.event.video_path || '' }}" ]; then
-              echo "video_path=${{ github.event.client_payload.video_path || github.event.video_path || 'input/video.mp4' }}" >> $GITHUB_OUTPUT
-              echo "audio_path=${{ github.event.client_payload.audio_path || github.event.audio_path || 'input/audio.mp3' }}" >> $GITHUB_OUTPUT
-              echo "audio_base64=${{ github.event.client_payload.audio_base64 || github.event.audio_base64 || '' }}" >> $GITHUB_OUTPUT
-              echo "output_path=${{ github.event.client_payload.output_path || github.event.output_path || 'output/merged.mp4' }}" >> $GITHUB_OUTPUT
-              echo "audio_handling=${{ github.event.client_payload.audio_handling || github.event.audio_handling || 'replace' }}" >> $GITHUB_OUTPUT
-              echo "webhook_url=${{ github.event.client_payload.webhook_url || github.event.webhook_url || '' }}" >> $GITHUB_OUTPUT
-            else
-              echo "Using default values for repository_dispatch"
-              echo "video_path=input/video.mp4" >> $GITHUB_OUTPUT
-              echo "audio_path=input/audio.mp3" >> $GITHUB_OUTPUT
-              echo "audio_base64=" >> $GITHUB_OUTPUT
-              echo "output_path=output/merged.mp4" >> $GITHUB_OUTPUT
-              echo "audio_handling=replace" >> $GITHUB_OUTPUT
-              echo "webhook_url=" >> $GITHUB_OUTPUT
-            fi
-          elif [ "${{ github.event_name }}" = "push" ]; then
-            echo "Triggered via push to webhook-trigger.json"
-            # Read parameters from the webhook-trigger.json file
-            if [ -f "webhook-trigger.json" ]; then
-              VIDEO_PATH=$(jq -r '.video_path // "input/video.mp4"' webhook-trigger.json)
-              AUDIO_PATH=$(jq -r '.audio_path // "input/audio.mp3"' webhook-trigger.json)
-              AUDIO_BASE64=$(jq -r '.audio_base64 // ""' webhook-trigger.json)
-              OUTPUT_PATH=$(jq -r '.output_path // "output/merged.mp4"' webhook-trigger.json)
-              AUDIO_HANDLING=$(jq -r '.audio_handling // "replace"' webhook-trigger.json)
-              WEBHOOK_URL=$(jq -r '.webhook_url // ""' webhook-trigger.json)
-              echo "video_path=${VIDEO_PATH}" >> $GITHUB_OUTPUT
-              echo "audio_path=${AUDIO_PATH}" >> $GITHUB_OUTPUT
-              echo "audio_base64=${AUDIO_BASE64}" >> $GITHUB_OUTPUT
-              echo "output_path=${OUTPUT_PATH}" >> $GITHUB_OUTPUT
-              echo "audio_handling=${AUDIO_HANDLING}" >> $GITHUB_OUTPUT
-              echo "webhook_url=${WEBHOOK_URL}" >> $GITHUB_OUTPUT
-            else
-              echo "webhook-trigger.json not found, using defaults"
-              echo "video_path=input/video.mp4" >> $GITHUB_OUTPUT
-              echo "audio_path=input/audio.mp3" >> $GITHUB_OUTPUT
-              echo "audio_base64=" >> $GITHUB_OUTPUT
-              echo "output_path=output/merged.mp4" >> $GITHUB_OUTPUT
-              echo "audio_handling=replace" >> $GITHUB_OUTPUT
-              echo "webhook_url=" >> $GITHUB_OUTPUT
-            fi
-          fi
+          echo "video_path=${{ github.event.inputs.video_path }}" >> $GITHUB_OUTPUT
+          echo "audio_path=${{ github.event.inputs.audio_path }}" >> $GITHUB_OUTPUT
+          echo "audio_base64=${{ github.event.inputs.audio_base64 }}" >> $GITHUB_OUTPUT
+          echo "output_path=${{ github.event.inputs.output_path }}" >> $GITHUB_OUTPUT
+          echo "audio_handling=${{ github.event.inputs.audio_handling }}" >> $GITHUB_OUTPUT
 
       - name: Set up FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
@@ -362,154 +302,3 @@ jobs:
           echo "Generated URLs:"
           echo "File URL: ${FILE_URL}"
           echo "Raw URL: ${RAW_URL}"
-
-      - name: Send completion webhook
-        if: steps.params.outputs.webhook_url != ''
-        run: |
-          WEBHOOK_URL="${{ steps.params.outputs.webhook_url }}"
-          
-          if [ -n "$WEBHOOK_URL" ]; then
-            echo "Sending completion notification to webhook: $WEBHOOK_URL"
-            
-            # Check if output file exists and get its size
-            OUTPUT_FILE="${{ steps.output.outputs.unique_output }}"
-            if [ -f "$OUTPUT_FILE" ]; then
-              FILE_SIZE=$(stat -c%s "$OUTPUT_FILE" 2>/dev/null || echo "unknown")
-              STATUS="completed"
-              ERROR_MESSAGE=""
-            else
-              FILE_SIZE="0"
-              STATUS="failed"
-              ERROR_MESSAGE="Output file was not created"
-            fi
-            
-            # Create JSON payload using jq to properly escape values
-            PAYLOAD=$(jq -n \
-              --arg status "$STATUS" \
-              --arg workflow_run_id "${{ github.run_id }}" \
-              --arg repository "${{ github.repository }}" \
-              --arg timestamp "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-              --arg video_path "${{ steps.params.outputs.video_path }}" \
-              --arg audio_path "${{ steps.params.outputs.audio_path }}" \
-              --arg audio_base64_provided "${{ steps.params.outputs.audio_base64 != '' && 'true' || 'false' }}" \
-              --arg output_path "${{ steps.params.outputs.output_path }}" \
-              --arg audio_handling "${{ steps.params.outputs.audio_handling }}" \
-              --arg file_path "${{ steps.output.outputs.unique_output }}" \
-              --arg file_url "${{ steps.url.outputs.file_url }}" \
-              --arg raw_url "${{ steps.url.outputs.raw_url }}" \
-              --arg filename "${{ steps.url.outputs.filename }}" \
-              --arg file_size "$FILE_SIZE" \
-              --arg download_url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-              --arg error_message "$ERROR_MESSAGE" \
-              '{
-                "status": $status,
-                "workflow_run_id": $workflow_run_id,
-                "repository": $repository,
-                "timestamp": $timestamp,
-                "input": {
-                  "video_path": $video_path,
-                  "audio_path": $audio_path,
-                  "audio_base64_provided": $audio_base64_provided,
-                  "output_path": $output_path,
-                  "audio_handling": $audio_handling
-                },
-                "output": {
-                  "file_path": $file_path,
-                  "file_url": $file_url,
-                  "raw_url": $raw_url,
-                  "filename": $filename,
-                  "file_size": $file_size
-                },
-                "artifacts": {
-                  "artifact_name": "merged-video",
-                  "download_url": $download_url
-                },
-                "error_message": $error_message
-              }')
-            
-            # Send the webhook with retry logic
-            RETRY_COUNT=0
-            MAX_RETRIES=3
-            
-            while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-              HTTP_CODE=$(curl -w "%{http_code}" -o /tmp/webhook_response.txt \
-                               -X POST \
-                               -H "Content-Type: application/json" \
-                               -H "User-Agent: GitHub-Actions-Merge-Media/1.0" \
-                               -d "$PAYLOAD" \
-                               --max-time 30 \
-                               --retry 2 \
-                               --silent \
-                               "$WEBHOOK_URL")
-              
-              if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-                echo "Webhook sent successfully! HTTP $HTTP_CODE"
-                echo "Response: $(cat /tmp/webhook_response.txt)"
-                break
-              else
-                RETRY_COUNT=$((RETRY_COUNT + 1))
-                echo "Webhook failed with HTTP $HTTP_CODE (attempt $RETRY_COUNT/$MAX_RETRIES)"
-                echo "Response: $(cat /tmp/webhook_response.txt)"
-                if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-                  echo "Retrying in 10 seconds..."
-                  sleep 10
-                fi
-              fi
-            done
-            
-            if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-              echo "❌ Failed to send webhook after $MAX_RETRIES attempts"
-              echo "Final HTTP Code: $HTTP_CODE"
-              echo "Payload that failed to send:"
-              echo "$PAYLOAD"
-              # Don't fail the workflow, just log the error
-              exit 0
-            fi
-          else
-            echo "No webhook URL provided, skipping notification"
-          fi
-
-      - name: Send error webhook on failure
-        if: failure() && steps.params.outputs.webhook_url != ''
-        run: |
-          WEBHOOK_URL="${{ steps.params.outputs.webhook_url }}"
-          
-          if [ -n "$WEBHOOK_URL" ]; then
-            echo "Sending error notification to webhook: $WEBHOOK_URL"
-            
-            # Create JSON payload using jq to properly escape values
-            ERROR_PAYLOAD=$(jq -n \
-              --arg status "failed" \
-              --arg workflow_run_id "${{ github.run_id }}" \
-              --arg repository "${{ github.repository }}" \
-              --arg timestamp "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-              --arg video_path "${{ steps.params.outputs.video_path || 'unknown' }}" \
-              --arg audio_path "${{ steps.params.outputs.audio_path || 'unknown' }}" \
-              --arg audio_base64_provided "${{ steps.params.outputs.audio_base64 != '' && 'true' || 'false' }}" \
-              --arg output_path "${{ steps.params.outputs.output_path || 'unknown' }}" \
-              --arg audio_handling "${{ steps.params.outputs.audio_handling || 'unknown' }}" \
-              --arg error_message "Workflow failed during processing. Check the GitHub Actions logs for details." \
-              --arg logs_url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-              '{
-                "status": $status,
-                "workflow_run_id": $workflow_run_id,
-                "repository": $repository,
-                "timestamp": $timestamp,
-                "input": {
-                  "video_path": $video_path,
-                  "audio_path": $audio_path,
-                  "audio_base64_provided": $audio_base64_provided,
-                  "output_path": $output_path,
-                  "audio_handling": $audio_handling
-                },
-                "error_message": $error_message,
-                "logs_url": $logs_url
-              }')
-            
-            curl -X POST \
-                 -H "Content-Type: application/json" \
-                 -H "User-Agent: GitHub-Actions-Merge-Media/1.0" \
-                 -d "$ERROR_PAYLOAD" \
-                 --max-time 30 \
-                 "$WEBHOOK_URL" || echo "Failed to send error webhook"
-          fi
