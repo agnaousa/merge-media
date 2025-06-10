@@ -1,0 +1,43 @@
+name: Merge Audio and Video
+
+on:
+  workflow_dispatch:
+    inputs:
+      video_path:
+        description: "Path to the video file"
+        required: true
+        default: "input/video.mp4"
+      audio_path:
+        description: "Path to the audio file"
+        required: true
+        default: "input/audio.mp3"
+      output_path:
+        description: "Path for the output merged file"
+        required: true
+        default: "output/merged.mp4"
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Merge audio with video
+        run: |
+          mkdir -p output
+          ffmpeg -i ${{ github.event.inputs.video_path }} \
+                 -i ${{ github.event.inputs.audio_path }} \
+                 -c:v copy -c:a aac -shortest \
+                 ${{ github.event.inputs.output_path }}
+
+      - name: Commit merged file
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add ${{ github.event.inputs.output_path }}
+          git commit -m "Add merged video"
+          git push
