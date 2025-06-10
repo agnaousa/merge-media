@@ -26,18 +26,61 @@ jobs:
       - name: Set up FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
+      - name: Validate input files
+        run: |
+          if [ ! -f "${{ github.event.inputs.video_path }}" ]; then
+            echo "Error: Video file not found at ${{ github.event.inputs.video_path }}"
+            exit 1
+          fi
+          if [ ! -f "${{ github.event.inputs.audio_path }}" ]; then
+            echo "Error: Audio file not found at ${{ github.event.inputs.audio_path }}"
+            exit 1
+          fi
+          echo "Input files validated successfully"
+
+      - name: Create output directory
+        run: |
+          mkdir -p "$(dirname "${{ github.event.inputs.output_path }}")"
+          echo "Output directory created: $(dirname "${{ github.event.inputs.output_path }}")"
+
       - name: Merge audio with video
         run: |
-          mkdir -p output
-          ffmpeg -i ${{ github.event.inputs.video_path }} \
-                 -i ${{ github.event.inputs.audio_path }} \
-                 -c:v copy -c:a aac -shortest \
-                 ${{ github.event.inputs.output_path }}
+          echo "Starting merge process..."
+          echo "Video: ${{ github.event.inputs.video_path }}"
+          echo "Audio: ${{ github.event.inputs.audio_path }}"
+          echo "Output: ${{ github.event.inputs.output_path }}"
+          
+          ffmpeg -y \
+                 -i "${{ github.event.inputs.video_path }}" \
+                 -i "${{ github.event.inputs.audio_path }}" \
+                 -c:v copy \
+                 -c:a aac \
+                 -shortest \
+                 "${{ github.event.inputs.output_path }}"
+          
+          echo "Merge completed successfully!"
+          echo "Output file size: $(du -h "${{ github.event.inputs.output_path }}" | cut -f1)"
+
+      - name: Upload merged file as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: merged-video
+          path: ${{ github.event.inputs.output_path }}
 
       - name: Commit merged file
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add ${{ github.event.inputs.output_path }}
-          git commit -m "Add merged video"
-          git push
+          
+          if git diff --quiet && git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git add "${{ github.event.inputs.output_path }}"
+            if git diff --staged --quiet; then
+              echo "No changes staged for commit"
+            else
+              git commit -m "Add merged video: ${{ github.event.inputs.output_path }}"
+              git push
+              echo "Changes committed and pushed successfully"
+            fi
+          fi
