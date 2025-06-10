@@ -11,9 +11,13 @@ on:
         required: true
         default: "input/video.mp4"
       audio_path:
-        description: "Path to the audio file or URL"
-        required: true
+        description: "Path to the audio file or URL (ignored if audio_base64 is provided)"
+        required: false
         default: "input/audio.mp3"
+      audio_base64:
+        description: "Base64 encoded audio data (JSON format: {\"audio_base64\":\"...\",\"content_type\":\"audio/mpeg\"})"
+        required: false
+        default: ""
       output_path:
         description: "Path for the output merged file"
         required: true
@@ -55,6 +59,7 @@ jobs:
             echo "Triggered via workflow_dispatch"
             echo "video_path=${{ github.event.inputs.video_path }}" >> $GITHUB_OUTPUT
             echo "audio_path=${{ github.event.inputs.audio_path }}" >> $GITHUB_OUTPUT
+            echo "audio_base64=${{ github.event.inputs.audio_base64 }}" >> $GITHUB_OUTPUT
             echo "output_path=${{ github.event.inputs.output_path }}" >> $GITHUB_OUTPUT
             echo "audio_handling=${{ github.event.inputs.audio_handling }}" >> $GITHUB_OUTPUT
             echo "webhook_url=${{ github.event.inputs.webhook_url }}" >> $GITHUB_OUTPUT
@@ -62,6 +67,7 @@ jobs:
             echo "Triggered via repository_dispatch (webhook)"
             echo "video_path=${{ github.event.client_payload.video_path || 'input/video.mp4' }}" >> $GITHUB_OUTPUT
             echo "audio_path=${{ github.event.client_payload.audio_path || 'input/audio.mp3' }}" >> $GITHUB_OUTPUT
+            echo "audio_base64=${{ github.event.client_payload.audio_base64 || '' }}" >> $GITHUB_OUTPUT
             echo "output_path=${{ github.event.client_payload.output_path || 'output/merged.mp4' }}" >> $GITHUB_OUTPUT
             echo "audio_handling=${{ github.event.client_payload.audio_handling || 'replace' }}" >> $GITHUB_OUTPUT
             echo "webhook_url=${{ github.event.client_payload.webhook_url || '' }}" >> $GITHUB_OUTPUT
@@ -71,11 +77,13 @@ jobs:
             if [ -f "webhook-trigger.json" ]; then
               VIDEO_PATH=$(jq -r '.video_path // "input/video.mp4"' webhook-trigger.json)
               AUDIO_PATH=$(jq -r '.audio_path // "input/audio.mp3"' webhook-trigger.json)
+              AUDIO_BASE64=$(jq -r '.audio_base64 // ""' webhook-trigger.json)
               OUTPUT_PATH=$(jq -r '.output_path // "output/merged.mp4"' webhook-trigger.json)
               AUDIO_HANDLING=$(jq -r '.audio_handling // "replace"' webhook-trigger.json)
               WEBHOOK_URL=$(jq -r '.webhook_url // ""' webhook-trigger.json)
               echo "video_path=${VIDEO_PATH}" >> $GITHUB_OUTPUT
               echo "audio_path=${AUDIO_PATH}" >> $GITHUB_OUTPUT
+              echo "audio_base64=${AUDIO_BASE64}" >> $GITHUB_OUTPUT
               echo "output_path=${OUTPUT_PATH}" >> $GITHUB_OUTPUT
               echo "audio_handling=${AUDIO_HANDLING}" >> $GITHUB_OUTPUT
               echo "webhook_url=${WEBHOOK_URL}" >> $GITHUB_OUTPUT
@@ -83,6 +91,7 @@ jobs:
               echo "webhook-trigger.json not found, using defaults"
               echo "video_path=input/video.mp4" >> $GITHUB_OUTPUT
               echo "audio_path=input/audio.mp3" >> $GITHUB_OUTPUT
+              echo "audio_base64=" >> $GITHUB_OUTPUT
               echo "output_path=output/merged.mp4" >> $GITHUB_OUTPUT
               echo "audio_handling=replace" >> $GITHUB_OUTPUT
               echo "webhook_url=" >> $GITHUB_OUTPUT
@@ -97,6 +106,7 @@ jobs:
         run: |
           VIDEO_PATH="${{ steps.params.outputs.video_path }}"
           AUDIO_PATH="${{ steps.params.outputs.audio_path }}"
+          AUDIO_BASE64="${{ steps.params.outputs.audio_base64 }}"
           
           # Function to check if a string is a URL
           is_url() {
@@ -123,8 +133,86 @@ jobs:
             echo "local_video_path=$VIDEO_PATH" >> $GITHUB_OUTPUT
           fi
           
-          # Handle audio input
-          if is_url "$AUDIO_PATH"; then
+          # Handle audio input - check for base64 data in either audio_base64 or audio_path fields
+          AUDIO_JSON=""
+          BASE64_DATA=""
+          CONTENT_TYPE="audio/mpeg"
+          
+          # First check if audio_base64 field has data
+          if [ -n "$AUDIO_BASE64" ] && [ "$AUDIO_BASE64" != "" ]; then
+            AUDIO_JSON="$AUDIO_BASE64"
+            echo "Processing base64 encoded audio data from audio_base64 field..."
+          # Then check if audio_path contains JSON with base64 data
+          elif echo "$AUDIO_PATH" | jq -e '.audio_base64' >/dev/null 2>&1; then
+            AUDIO_JSON="$AUDIO_PATH"
+            echo "Processing base64 encoded audio data from audio_path field (JSON format)..."
+          fi
+          
+          # If we found JSON data with base64, process it
+          if [ -n "$AUDIO_JSON" ]; then
+            mkdir -p temp
+            
+            # Parse the JSON input to extract base64 data and content type
+            if echo "$AUDIO_JSON" | jq -e . >/dev/null 2>&1; then
+              # Valid JSON format
+              BASE64_DATA=$(echo "$AUDIO_JSON" | jq -r '.audio_base64 // empty')
+              CONTENT_TYPE=$(echo "$AUDIO_JSON" | jq -r '.content_type // "audio/mpeg"')
+            else
+              # Assume it's just the base64 string
+              BASE64_DATA="$AUDIO_JSON"
+              CONTENT_TYPE="audio/mpeg"
+            fi
+            
+            if [ -z "$BASE64_DATA" ]; then
+              echo "Error: No base64 audio data found in input"
+              exit 1
+            fi
+            
+            # Determine file extension from content type
+            case "$CONTENT_TYPE" in
+              "audio/mpeg"|"audio/mp3")
+                AUDIO_EXT=".mp3"
+                ;;
+              "audio/wav"|"audio/wave")
+                AUDIO_EXT=".wav"
+                ;;
+              "audio/aac")
+                AUDIO_EXT=".aac"
+                ;;
+              "audio/ogg")
+                AUDIO_EXT=".ogg"
+                ;;
+              "audio/m4a")
+                AUDIO_EXT=".m4a"
+                ;;
+              "audio/flac")
+                AUDIO_EXT=".flac"
+                ;;
+              *)
+                echo "Warning: Unknown content type '$CONTENT_TYPE', defaulting to .mp3"
+                AUDIO_EXT=".mp3"
+                ;;
+            esac
+            
+            LOCAL_AUDIO_PATH="temp/decoded_audio${AUDIO_EXT}"
+            
+            # Decode base64 data to file
+            if echo "$BASE64_DATA" | base64 -d > "$LOCAL_AUDIO_PATH"; then
+              # Verify the file was created and has content
+              if [ -s "$LOCAL_AUDIO_PATH" ]; then
+                echo "Base64 audio decoded successfully"
+                echo "Content type: $CONTENT_TYPE"
+                echo "File size: $(du -h "$LOCAL_AUDIO_PATH" | cut -f1)"
+                echo "local_audio_path=$LOCAL_AUDIO_PATH" >> $GITHUB_OUTPUT
+              else
+                echo "Error: Decoded audio file is empty"
+                exit 1
+              fi
+            else
+              echo "Error: Failed to decode base64 audio data"
+              exit 1
+            fi
+          elif is_url "$AUDIO_PATH"; then
             echo "Audio input is a URL: $AUDIO_PATH"
             echo "Downloading audio file..."
             mkdir -p temp
@@ -308,6 +396,7 @@ jobs:
             "input": {
               "video_path": "${{ steps.params.outputs.video_path }}",
               "audio_path": "${{ steps.params.outputs.audio_path }}",
+              "audio_base64_provided": "${{ steps.params.outputs.audio_base64 != '' && 'true' || 'false' }}",
               "output_path": "${{ steps.params.outputs.output_path }}",
               "audio_handling": "${{ steps.params.outputs.audio_handling }}"
             },
@@ -386,6 +475,7 @@ jobs:
             "input": {
               "video_path": "${{ steps.params.outputs.video_path || 'unknown' }}",
               "audio_path": "${{ steps.params.outputs.audio_path || 'unknown' }}",
+              "audio_base64_provided": "${{ steps.params.outputs.audio_base64 != '' && 'true' || 'false' }}",
               "output_path": "${{ steps.params.outputs.output_path || 'unknown' }}",
               "audio_handling": "${{ steps.params.outputs.audio_handling || 'unknown' }}"
             },
