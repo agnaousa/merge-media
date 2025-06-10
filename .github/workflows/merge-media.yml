@@ -1,5 +1,8 @@
 name: Merge Audio and Video
 
+permissions:
+  contents: write  # ✅ This line gives write access to the repository
+
 on:
   workflow_dispatch:
     inputs:
