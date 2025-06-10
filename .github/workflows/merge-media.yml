@@ -65,12 +65,23 @@ jobs:
             echo "webhook_url=${{ github.event.inputs.webhook_url }}" >> $GITHUB_OUTPUT
           elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
             echo "Triggered via repository_dispatch (webhook)"
-            echo "video_path=${{ github.event.client_payload.video_path || 'input/video.mp4' }}" >> $GITHUB_OUTPUT
-            echo "audio_path=${{ github.event.client_payload.audio_path || 'input/audio.mp3' }}" >> $GITHUB_OUTPUT
-            echo "audio_base64=${{ github.event.client_payload.audio_base64 || '' }}" >> $GITHUB_OUTPUT
-            echo "output_path=${{ github.event.client_payload.output_path || 'output/merged.mp4' }}" >> $GITHUB_OUTPUT
-            echo "audio_handling=${{ github.event.client_payload.audio_handling || 'replace' }}" >> $GITHUB_OUTPUT
-            echo "webhook_url=${{ github.event.client_payload.webhook_url || '' }}" >> $GITHUB_OUTPUT
+            # Check if data is in client_payload (standard format) or direct fields (custom format)
+            if [ -n "${{ github.event.client_payload.video_path || github.event.video_path || '' }}" ]; then
+              echo "video_path=${{ github.event.client_payload.video_path || github.event.video_path || 'input/video.mp4' }}" >> $GITHUB_OUTPUT
+              echo "audio_path=${{ github.event.client_payload.audio_path || github.event.audio_path || 'input/audio.mp3' }}" >> $GITHUB_OUTPUT
+              echo "audio_base64=${{ github.event.client_payload.audio_base64 || github.event.audio_base64 || '' }}" >> $GITHUB_OUTPUT
+              echo "output_path=${{ github.event.client_payload.output_path || github.event.output_path || 'output/merged.mp4' }}" >> $GITHUB_OUTPUT
+              echo "audio_handling=${{ github.event.client_payload.audio_handling || github.event.audio_handling || 'replace' }}" >> $GITHUB_OUTPUT
+              echo "webhook_url=${{ github.event.client_payload.webhook_url || github.event.webhook_url || '' }}" >> $GITHUB_OUTPUT
+            else
+              echo "Using default values for repository_dispatch"
+              echo "video_path=input/video.mp4" >> $GITHUB_OUTPUT
+              echo "audio_path=input/audio.mp3" >> $GITHUB_OUTPUT
+              echo "audio_base64=" >> $GITHUB_OUTPUT
+              echo "output_path=output/merged.mp4" >> $GITHUB_OUTPUT
+              echo "audio_handling=replace" >> $GITHUB_OUTPUT
+              echo "webhook_url=" >> $GITHUB_OUTPUT
+            fi
           elif [ "${{ github.event_name }}" = "push" ]; then
             echo "Triggered via push to webhook-trigger.json"
             # Read parameters from the webhook-trigger.json file
