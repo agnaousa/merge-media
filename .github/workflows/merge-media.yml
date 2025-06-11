@@ -1,4 +1,4 @@
-name: Merge Audio and Video (Multipart Form Data)
+name: Merge Audio and Video with Background Sound & Captions
 
 
 permissions:
@@ -32,6 +32,41 @@ on:
           - "replace"
           - "mix"
           - "keep_video"
+      background_sound_path:
+        description: "Path to background sound file or URL (optional)"
+        required: false
+        default: ""
+      background_sound_base64:
+        description: "Base64 encoded background sound data (optional)"
+        required: false
+        default: ""
+      background_volume:
+        description: "Background sound volume (0.0 to 1.0, default 0.3)"
+        required: false
+        default: "0.3"
+      caption_text:
+        description: "Caption text to add to video (optional)"
+        required: false
+        default: ""
+      caption_style:
+        description: "Caption style options"
+        required: false
+        default: "fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5"
+      caption_position:
+        description: "Caption position"
+        required: false
+        default: "bottom_center"
+        type: choice
+        options:
+          - "top_left"
+          - "top_center"
+          - "top_right"
+          - "center_left"
+          - "center"
+          - "center_right"
+          - "bottom_left"
+          - "bottom_center"
+          - "bottom_right"
 
 
 jobs:
@@ -49,6 +84,12 @@ jobs:
           echo "audio_base64=${{ github.event.inputs.audio_base64 }}" >> $GITHUB_OUTPUT
           echo "output_path=${{ github.event.inputs.output_path }}" >> $GITHUB_OUTPUT
           echo "audio_handling=${{ github.event.inputs.audio_handling }}" >> $GITHUB_OUTPUT
+          echo "background_sound_path=${{ github.event.inputs.background_sound_path }}" >> $GITHUB_OUTPUT
+          echo "background_sound_base64=${{ github.event.inputs.background_sound_base64 }}" >> $GITHUB_OUTPUT
+          echo "background_volume=${{ github.event.inputs.background_volume }}" >> $GITHUB_OUTPUT
+          echo "caption_text=${{ github.event.inputs.caption_text }}" >> $GITHUB_OUTPUT
+          echo "caption_style=${{ github.event.inputs.caption_style }}" >> $GITHUB_OUTPUT
+          echo "caption_position=${{ github.event.inputs.caption_position }}" >> $GITHUB_OUTPUT
 
       - name: Set up FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
@@ -167,6 +208,52 @@ jobs:
             echo "Audio input is a local path: $AUDIO_PATH"
             echo "local_audio_path=$AUDIO_PATH" >> $GITHUB_OUTPUT
           fi
+          
+          # Handle background sound input (similar to main audio handling)
+          BACKGROUND_SOUND_PATH="${{ steps.params.outputs.background_sound_path }}"
+          BACKGROUND_SOUND_BASE64="${{ steps.params.outputs.background_sound_base64 }}"
+          
+          # Check if background sound is provided
+          if [ -n "$BACKGROUND_SOUND_BASE64" ] && [ "$BACKGROUND_SOUND_BASE64" != "" ]; then
+            echo "Processing base64 encoded background sound data..."
+            mkdir -p temp
+            LOCAL_BACKGROUND_PATH="temp/background_sound.mp3"
+            
+            if echo "$BACKGROUND_SOUND_BASE64" | base64 -d > "$LOCAL_BACKGROUND_PATH"; then
+              if [ -s "$LOCAL_BACKGROUND_PATH" ]; then
+                echo "Background sound decoded successfully"
+                echo "local_background_path=$LOCAL_BACKGROUND_PATH" >> $GITHUB_OUTPUT
+              else
+                echo "Error: Decoded background sound file is empty"
+                exit 1
+              fi
+            else
+              echo "Error: Failed to decode base64 background sound data"
+              exit 1
+            fi
+          elif [ -n "$BACKGROUND_SOUND_PATH" ] && [ "$BACKGROUND_SOUND_PATH" != "" ]; then
+            if is_url "$BACKGROUND_SOUND_PATH"; then
+              echo "Background sound input is a URL: $BACKGROUND_SOUND_PATH"
+              echo "Downloading background sound file..."
+              mkdir -p temp
+              BG_EXT=$(echo "$BACKGROUND_SOUND_PATH" | grep -oE '\.(mp3|wav|aac|ogg|m4a|flac)(\?.*)?$' | sed 's/\?.*//' || echo ".mp3")
+              LOCAL_BACKGROUND_PATH="temp/background_sound${BG_EXT}"
+              
+              if curl -L -o "$LOCAL_BACKGROUND_PATH" "$BACKGROUND_SOUND_PATH"; then
+                echo "Background sound downloaded successfully"
+                echo "local_background_path=$LOCAL_BACKGROUND_PATH" >> $GITHUB_OUTPUT
+              else
+                echo "Failed to download background sound from URL"
+                exit 1
+              fi
+            else
+              echo "Background sound input is a local path: $BACKGROUND_SOUND_PATH"
+              echo "local_background_path=$BACKGROUND_SOUND_PATH" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "No background sound provided"
+            echo "local_background_path=" >> $GITHUB_OUTPUT
+          fi
 
       - name: Generate unique output filename
         id: output
@@ -189,6 +276,18 @@ jobs:
             echo "Error: Audio file not found at ${{ steps.download.outputs.local_audio_path }}"
             exit 1
           fi
+          
+          # Validate background sound if provided
+          BACKGROUND_PATH="${{ steps.download.outputs.local_background_path }}"
+          if [ -n "$BACKGROUND_PATH" ] && [ "$BACKGROUND_PATH" != "" ]; then
+            if [ ! -f "$BACKGROUND_PATH" ]; then
+              echo "Error: Background sound file not found at $BACKGROUND_PATH"
+              exit 1
+            else
+              echo "Background sound file validated: $BACKGROUND_PATH"
+            fi
+          fi
+          
           echo "Input files validated successfully"
 
       - name: Create output directory
@@ -203,62 +302,95 @@ jobs:
           echo "Audio: ${{ steps.params.outputs.audio_path }}"
           echo "Local Video: ${{ steps.download.outputs.local_video_path }}"
           echo "Local Audio: ${{ steps.download.outputs.local_audio_path }}"
+          echo "Background Sound: ${{ steps.download.outputs.local_background_path }}"
+          echo "Caption Text: ${{ steps.params.outputs.caption_text }}"
           echo "Output: ${{ steps.output.outputs.unique_output }}"
           echo "Audio handling: ${{ steps.params.outputs.audio_handling }}"
           
-          case "${{ steps.params.outputs.audio_handling }}" in
-            "replace")
-              echo "Replacing video audio with new audio..."
-              AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.download.outputs.local_audio_path }}")
-              ffmpeg -y \
-                     -i "${{ steps.download.outputs.local_video_path }}" \
-                     -i "${{ steps.download.outputs.local_audio_path }}" \
-                     -filter_complex "[0:v]loop=loop=-1:size=32767:start=0[looped_video]; [looped_video]setpts=PTS-STARTPTS[v]" \
-                     -map "[v]" \
-                     -map 1:a \
-                     -c:v libx264 \
-                     -c:a aac \
-                     -t ${AUDIO_DURATION} \
-                     "${{ steps.output.outputs.unique_output }}"
-              ;;
-            "mix")
-              echo "Mixing video audio with new audio..."
-              AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.download.outputs.local_audio_path }}")
-              ffmpeg -y \
-                     -i "${{ steps.download.outputs.local_video_path }}" \
-                     -i "${{ steps.download.outputs.local_audio_path }}" \
-                     -filter_complex "[0:v]loop=loop=-1:size=32767:start=0[looped_video]; [looped_video]setpts=PTS-STARTPTS[v]; [0:a][1:a]amix=inputs=2:duration=longest[a]" \
-                     -map "[v]" \
-                     -map "[a]" \
-                     -c:v libx264 \
-                     -c:a aac \
-                     -t ${AUDIO_DURATION} \
-                     "${{ steps.output.outputs.unique_output }}"
-              ;;
-            "keep_video")
-              echo "Keeping original video audio, ignoring new audio..."
-              ffmpeg -y \
-                     -i "${{ steps.download.outputs.local_video_path }}" \
-                     -c:v copy \
-                     -c:a aac \
-                     "${{ steps.output.outputs.unique_output }}"
-              ;;
-            *)
-              echo "Unknown audio handling option: ${{ steps.params.outputs.audio_handling }}"
-              echo "Defaulting to replace mode..."
-              AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.download.outputs.local_audio_path }}")
-              ffmpeg -y \
-                     -i "${{ steps.download.outputs.local_video_path }}" \
-                     -i "${{ steps.download.outputs.local_audio_path }}" \
-                     -filter_complex "[0:v]loop=loop=-1:size=32767:start=0[looped_video]; [looped_video]setpts=PTS-STARTPTS[v]" \
-                     -map "[v]" \
-                     -map 1:a \
-                     -c:v libx264 \
-                     -c:a aac \
-                     -t ${AUDIO_DURATION} \
-                     "${{ steps.output.outputs.unique_output }}"
-              ;;
+          # Get basic parameters
+          BACKGROUND_PATH="${{ steps.download.outputs.local_background_path }}"
+          BACKGROUND_VOLUME="${{ steps.params.outputs.background_volume }}"
+          CAPTION_TEXT="${{ steps.params.outputs.caption_text }}"
+          CAPTION_STYLE="${{ steps.params.outputs.caption_style }}"
+          CAPTION_POSITION="${{ steps.params.outputs.caption_position }}"
+          
+          # Determine caption position coordinates
+          case "$CAPTION_POSITION" in
+            "top_left") CAPTION_X="10"; CAPTION_Y="10" ;;
+            "top_center") CAPTION_X="(w-text_w)/2"; CAPTION_Y="10" ;;
+            "top_right") CAPTION_X="w-text_w-10"; CAPTION_Y="10" ;;
+            "center_left") CAPTION_X="10"; CAPTION_Y="(h-text_h)/2" ;;
+            "center") CAPTION_X="(w-text_w)/2"; CAPTION_Y="(h-text_h)/2" ;;
+            "center_right") CAPTION_X="w-text_w-10"; CAPTION_Y="(h-text_h)/2" ;;
+            "bottom_left") CAPTION_X="10"; CAPTION_Y="h-text_h-10" ;;
+            "bottom_center") CAPTION_X="(w-text_w)/2"; CAPTION_Y="h-text_h-10" ;;
+            "bottom_right") CAPTION_X="w-text_w-10"; CAPTION_Y="h-text_h-10" ;;
+            *) CAPTION_X="(w-text_w)/2"; CAPTION_Y="h-text_h-10" ;;  # default to bottom_center
           esac
+          
+          # Build filter complex based on options
+          VIDEO_FILTER="[0:v]loop=loop=-1:size=32767:start=0[looped_video]; [looped_video]setpts=PTS-STARTPTS[v_base]"
+          
+          # Add caption filter if caption text is provided
+          if [ -n "$CAPTION_TEXT" ] && [ "$CAPTION_TEXT" != "" ]; then
+            echo "Adding captions to video..."
+            ESCAPED_TEXT=$(echo "$CAPTION_TEXT" | sed "s/'/'\\\\''/g; s/:/\\\\:/g; s/,/\\\\,/g")
+            VIDEO_FILTER="${VIDEO_FILTER}; [v_base]drawtext=text='${ESCAPED_TEXT}':${CAPTION_STYLE}:x=${CAPTION_X}:y=${CAPTION_Y}[v_with_text]"
+            FINAL_VIDEO="[v_with_text]"
+          else
+            FINAL_VIDEO="[v_base]"
+          fi
+          
+          # Handle audio mixing based on mode and background sound
+          AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.download.outputs.local_audio_path }}")
+          
+          # Build audio filter based on background sound and audio handling
+          if [ -n "$BACKGROUND_PATH" ] && [ "$BACKGROUND_PATH" != "" ]; then
+            echo "Background sound detected, creating complex audio mix..."
+            case "${{ steps.params.outputs.audio_handling }}" in
+              "replace")
+                echo "Mode: Replace video audio + add background sound"
+                AUDIO_FILTER="; [1:a]volume=1[main_audio]; [2:a]aloop=loop=-1:size=2e+09,volume=${BACKGROUND_VOLUME}[bg_audio]; [main_audio][bg_audio]amix=inputs=2:duration=first[a]"
+                INPUTS="-i \"${{ steps.download.outputs.local_video_path }}\" -i \"${{ steps.download.outputs.local_audio_path }}\" -i \"$BACKGROUND_PATH\""
+                ;;
+              "mix")
+                echo "Mode: Mix video audio with new audio + add background sound"
+                AUDIO_FILTER="; [0:a][1:a]amix=inputs=2:duration=longest[mixed_audio]; [mixed_audio]volume=1[main_audio]; [2:a]aloop=loop=-1:size=2e+09,volume=${BACKGROUND_VOLUME}[bg_audio]; [main_audio][bg_audio]amix=inputs=2:duration=first[a]"
+                INPUTS="-i \"${{ steps.download.outputs.local_video_path }}\" -i \"${{ steps.download.outputs.local_audio_path }}\" -i \"$BACKGROUND_PATH\""
+                ;;
+              "keep_video")
+                echo "Mode: Keep video audio + add background sound"
+                AUDIO_FILTER="; [0:a]volume=1[main_audio]; [1:a]aloop=loop=-1:size=2e+09,volume=${BACKGROUND_VOLUME}[bg_audio]; [main_audio][bg_audio]amix=inputs=2:duration=first[a]"
+                INPUTS="-i \"${{ steps.download.outputs.local_video_path }}\" -i \"$BACKGROUND_PATH\""
+                AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.download.outputs.local_video_path }}")
+                ;;
+            esac
+          else
+            echo "No background sound, using standard audio handling..."
+            case "${{ steps.params.outputs.audio_handling }}" in
+              "replace")
+                AUDIO_FILTER="; [1:a]volume=1[a]"
+                INPUTS="-i \"${{ steps.download.outputs.local_video_path }}\" -i \"${{ steps.download.outputs.local_audio_path }}\""
+                ;;
+              "mix")
+                AUDIO_FILTER="; [0:a][1:a]amix=inputs=2:duration=longest[a]"
+                INPUTS="-i \"${{ steps.download.outputs.local_video_path }}\" -i \"${{ steps.download.outputs.local_audio_path }}\""
+                ;;
+              "keep_video")
+                AUDIO_FILTER="; [0:a]volume=1[a]"
+                INPUTS="-i \"${{ steps.download.outputs.local_video_path }}\""
+                AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.download.outputs.local_video_path }}")
+                ;;
+            esac
+          fi
+          
+          # Combine video and audio filters
+          COMPLETE_FILTER="${VIDEO_FILTER}${AUDIO_FILTER}"
+          
+          echo "Executing FFmpeg with complex filter..."
+          echo "Filter: $COMPLETE_FILTER"
+          
+          eval "ffmpeg -y $INPUTS -filter_complex \"$COMPLETE_FILTER\" -map \"$FINAL_VIDEO\" -map \"[a]\" -c:v libx264 -c:a aac -t $AUDIO_DURATION \"${{ steps.output.outputs.unique_output }}\""
           
           echo "Merge completed successfully!"
           echo "Output file size: $(du -h "${{ steps.output.outputs.unique_output }}" | cut -f1)"
