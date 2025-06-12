@@ -55,7 +55,7 @@ This workflow can:
     "video_path": "https://your-video-url.com/video.mp4",
     "audio_path": "https://your-audio-url.com/audio.mp3",
     "background_sound_config": "{\"path\":\"https://your-music-url.com/background.mp3\",\"base64\":\"\",\"volume\":\"0.3\"}",
-    "caption_config": "{\"text\":\"Welcome to our tutorial!\",\"style\":\"fontsize=28:fontcolor=yellow:box=1:boxcolor=black@0.8\",\"position\":\"bottom_center\"}",
+    "caption_config": "{\"text\":\"Welcome to our tutorial!\",\"style\":\"fontsize=40:fontcolor=ffffff:box=1:boxcolor=000000@0.8:boxborderw=1:boxw=876:boxpadding=5\",\"position\":\"bottom_center\"}",
     "output_path": "output/merged.mp4",
     "audio_handling": "mix"
   }

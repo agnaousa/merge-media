@@ -67,7 +67,7 @@ jobs:
           # Parse caption config JSON
           CAPTION_CONFIG='${{ github.event.inputs.caption_config }}'
           echo "caption_text=$(echo "$CAPTION_CONFIG" | jq -r '.text // ""')" >> $GITHUB_OUTPUT
-          echo "caption_style=$(echo "$CAPTION_CONFIG" | jq -r '.style // "fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5"')" >> $GITHUB_OUTPUT
+          echo "caption_style=$(echo "$CAPTION_CONFIG" | jq -r '.style // "fontsize=40:fontcolor=ffffff:box=1:boxcolor=000000@0.8:boxborderw=1:boxw=876:boxpadding=5"')" >> $GITHUB_OUTPUT
           echo "caption_position=$(echo "$CAPTION_CONFIG" | jq -r '.position // "bottom_center"')" >> $GITHUB_OUTPUT
 
       - name: Set up FFmpeg and tools
