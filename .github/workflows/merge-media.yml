@@ -468,10 +468,24 @@ jobs:
           if [ -n "$CAPTION_TEXT" ] && [ "$CAPTION_TEXT" != "" ]; then
             echo "Adding captions to video with padding protection..."
             
-            # Split long text into multiple lines to prevent overflow
-            # Calculate approximate characters per line based on video width
-            # Assuming average character width of ~12px at fontsize=24
-            CHARS_PER_LINE=$(( (1920 - 2 * PADDING_X) / 12 ))
+            # Get video dimensions to calculate proper text wrapping
+            VIDEO_WIDTH=$(ffprobe -v quiet -select_streams v:0 -show_entries stream=width -of csv=p=0 "${{ steps.download.outputs.local_video_path }}")
+            VIDEO_HEIGHT=$(ffprobe -v quiet -select_streams v:0 -show_entries stream=height -of csv=p=0 "${{ steps.download.outputs.local_video_path }}")
+            
+            echo "Video dimensions: ${VIDEO_WIDTH}x${VIDEO_HEIGHT}"
+            
+            # Calculate available width for text (video width minus padding on both sides)
+            AVAILABLE_WIDTH=$(( VIDEO_WIDTH - 2 * PADDING_X ))
+            
+            # For 9:16 aspect ratio (portrait), adjust character calculation
+            # Use smaller character width estimate for better fitting
+            CHAR_WIDTH=10  # Reduced from 12 for portrait videos
+            CHARS_PER_LINE=$(( AVAILABLE_WIDTH / CHAR_WIDTH ))
+            
+            # Ensure minimum reasonable line length
+            if [ $CHARS_PER_LINE -lt 20 ]; then
+              CHARS_PER_LINE=20
+            fi
             
             # Use fold command to wrap text at word boundaries
             WRAPPED_TEXT=$(echo "$CAPTION_TEXT" | fold -w $CHARS_PER_LINE -s)
@@ -484,8 +498,9 @@ jobs:
             FINAL_VIDEO="[v_with_text]"
             
             echo "Caption positioning: X=${PADDING_X}, Y=${CAPTION_Y}"
-            echo "Text wrapped to max ${CHARS_PER_LINE} characters per line"
-            echo "Wrapped text preview: $(echo "$WRAPPED_TEXT" | head -n 1)..."
+            echo "Available width: ${AVAILABLE_WIDTH}px, Characters per line: ${CHARS_PER_LINE}"
+            echo "Wrapped text preview:"
+            echo "$WRAPPED_TEXT" | head -n 3
           else
             FINAL_VIDEO="[v_base]"
           fi
