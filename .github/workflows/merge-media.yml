@@ -286,6 +286,10 @@ jobs:
           echo "Output: ${{ steps.output.outputs.unique_output }}"
           echo "Audio handling: ${{ steps.params.outputs.audio_handling }}"
           
+          # Check if video has audio stream
+          VIDEO_HAS_AUDIO=$(ffprobe -v quiet -select_streams a -show_entries stream=codec_type -of csv=p=0 "${{ steps.download.outputs.local_video_path }}" | wc -l)
+          echo "Video has audio streams: $VIDEO_HAS_AUDIO"
+          
           # Get basic parameters
           BACKGROUND_PATH="${{ steps.download.outputs.local_background_path }}"
           BACKGROUND_VOLUME="${{ steps.params.outputs.background_volume }}"
@@ -323,7 +327,7 @@ jobs:
           # Handle audio mixing based on mode and background sound
           AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.download.outputs.local_audio_path }}")
           
-          # Build audio filter based on background sound and audio handling
+          # Build audio filter based on background sound, audio handling, and whether video has audio
           if [ -n "$BACKGROUND_PATH" ] && [ "$BACKGROUND_PATH" != "" ]; then
             echo "Background sound detected, creating complex audio mix..."
             case "${{ steps.params.outputs.audio_handling }}" in
@@ -333,15 +337,28 @@ jobs:
                 INPUTS="-i \"${{ steps.download.outputs.local_video_path }}\" -i \"${{ steps.download.outputs.local_audio_path }}\" -i \"$BACKGROUND_PATH\""
                 ;;
               "mix")
-                echo "Mode: Mix video audio with new audio + add background sound"
-                AUDIO_FILTER="; [0:a][1:a]amix=inputs=2:duration=longest[mixed_audio]; [mixed_audio]volume=1[main_audio]; [2:a]aloop=loop=-1:size=2e+09,volume=${BACKGROUND_VOLUME}[bg_audio]; [main_audio][bg_audio]amix=inputs=2:duration=first[a]"
-                INPUTS="-i \"${{ steps.download.outputs.local_video_path }}\" -i \"${{ steps.download.outputs.local_audio_path }}\" -i \"$BACKGROUND_PATH\""
+                if [ "$VIDEO_HAS_AUDIO" -gt 0 ]; then
+                  echo "Mode: Mix video audio with new audio + add background sound"
+                  AUDIO_FILTER="; [0:a][1:a]amix=inputs=2:duration=longest[mixed_audio]; [mixed_audio]volume=1[main_audio]; [2:a]aloop=loop=-1:size=2e+09,volume=${BACKGROUND_VOLUME}[bg_audio]; [main_audio][bg_audio]amix=inputs=2:duration=first[a]"
+                  INPUTS="-i \"${{ steps.download.outputs.local_video_path }}\" -i \"${{ steps.download.outputs.local_audio_path }}\" -i \"$BACKGROUND_PATH\""
+                else
+                  echo "Mode: Video has no audio, using new audio + background sound"
+                  AUDIO_FILTER="; [1:a]volume=1[main_audio]; [2:a]aloop=loop=-1:size=2e+09,volume=${BACKGROUND_VOLUME}[bg_audio]; [main_audio][bg_audio]amix=inputs=2:duration=first[a]"
+                  INPUTS="-i \"${{ steps.download.outputs.local_video_path }}\" -i \"${{ steps.download.outputs.local_audio_path }}\" -i \"$BACKGROUND_PATH\""
+                fi
                 ;;
               "keep_video")
-                echo "Mode: Keep video audio + add background sound"
-                AUDIO_FILTER="; [0:a]volume=1[main_audio]; [1:a]aloop=loop=-1:size=2e+09,volume=${BACKGROUND_VOLUME}[bg_audio]; [main_audio][bg_audio]amix=inputs=2:duration=first[a]"
-                INPUTS="-i \"${{ steps.download.outputs.local_video_path }}\" -i \"$BACKGROUND_PATH\""
-                AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.download.outputs.local_video_path }}")
+                if [ "$VIDEO_HAS_AUDIO" -gt 0 ]; then
+                  echo "Mode: Keep video audio + add background sound"
+                  AUDIO_FILTER="; [0:a]volume=1[main_audio]; [1:a]aloop=loop=-1:size=2e+09,volume=${BACKGROUND_VOLUME}[bg_audio]; [main_audio][bg_audio]amix=inputs=2:duration=first[a]"
+                  INPUTS="-i \"${{ steps.download.outputs.local_video_path }}\" -i \"$BACKGROUND_PATH\""
+                  AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.download.outputs.local_video_path }}")
+                else
+                  echo "Mode: Video has no audio, using background sound only"
+                  AUDIO_FILTER="; [1:a]aloop=loop=-1:size=2e+09,volume=${BACKGROUND_VOLUME}[a]"
+                  INPUTS="-i \"${{ steps.download.outputs.local_video_path }}\" -i \"$BACKGROUND_PATH\""
+                  AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.download.outputs.local_video_path }}")
+                fi
                 ;;
             esac
           else
@@ -352,13 +369,26 @@ jobs:
                 INPUTS="-i \"${{ steps.download.outputs.local_video_path }}\" -i \"${{ steps.download.outputs.local_audio_path }}\""
                 ;;
               "mix")
-                AUDIO_FILTER="; [0:a][1:a]amix=inputs=2:duration=longest[a]"
-                INPUTS="-i \"${{ steps.download.outputs.local_video_path }}\" -i \"${{ steps.download.outputs.local_audio_path }}\""
+                if [ "$VIDEO_HAS_AUDIO" -gt 0 ]; then
+                  AUDIO_FILTER="; [0:a][1:a]amix=inputs=2:duration=longest[a]"
+                  INPUTS="-i \"${{ steps.download.outputs.local_video_path }}\" -i \"${{ steps.download.outputs.local_audio_path }}\""
+                else
+                  echo "Video has no audio, using new audio only"
+                  AUDIO_FILTER="; [1:a]volume=1[a]"
+                  INPUTS="-i \"${{ steps.download.outputs.local_video_path }}\" -i \"${{ steps.download.outputs.local_audio_path }}\""
+                fi
                 ;;
               "keep_video")
-                AUDIO_FILTER="; [0:a]volume=1[a]"
-                INPUTS="-i \"${{ steps.download.outputs.local_video_path }}\""
-                AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.download.outputs.local_video_path }}")
+                if [ "$VIDEO_HAS_AUDIO" -gt 0 ]; then
+                  AUDIO_FILTER="; [0:a]volume=1[a]"
+                  INPUTS="-i \"${{ steps.download.outputs.local_video_path }}\""
+                  AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.download.outputs.local_video_path }}")
+                else
+                  echo "Video has no audio, cannot keep video audio. Adding silence."
+                  AUDIO_FILTER="; anullsrc=channel_layout=stereo:sample_rate=44100[a]"
+                  INPUTS="-i \"${{ steps.download.outputs.local_video_path }}\""
+                  AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${{ steps.download.outputs.local_video_path }}")
+                fi
                 ;;
             esac
           fi
