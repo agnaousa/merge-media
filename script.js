@@ -589,8 +589,19 @@ class CaptionStyleGenerator {
         const customY = parseInt(this.customY.value) || 0;
         const textPadding = parseInt(this.textPadding.value);
 
-        // Build FFmpeg drawtext filter string - only include non-default values
-        let style = `text='${text}':fontfile='${fontFamily}':fontsize=${fontSize}:fontcolor=${fontColor}`;
+        // Helper function to escape text for FFmpeg
+        const escapeFFmpegText = (str) => {
+            return str.replace(/'/g, "\\'")
+                     .replace(/:/g, "\\:")
+                     .replace(/\[/g, "\\[")
+                     .replace(/\]/g, "\\]")
+                     .replace(/,/g, "\\,")
+                     .replace(/;/g, "\\;");
+        };
+
+        // Build FFmpeg drawtext filter string - avoid quotes around values
+        const escapedText = escapeFFmpegText(text);
+        let style = `text=${escapedText}:fontfile=${fontFamily}:fontsize=${fontSize}:fontcolor=${fontColor}`;
         
         // Add text alignment (only if not default 'left')
         if (textAlign !== 'left') {
@@ -664,10 +675,10 @@ class CaptionStyleGenerator {
         // Add fade effects (only if enabled and values > 0)
         if (enableFade) {
             if (fadeIn > 0) {
-                style += `:enable='between(t,0,${fadeIn})*fade(t,0,${fadeIn})'`;
+                style += `:enable=between(t,0,${fadeIn})*fade(t,0,${fadeIn})`;
             }
             if (fadeOut > 0) {
-                style += `:enable='between(t,${fadeOut},${fadeOut + 5})*fade(t,${fadeOut},${fadeOut + 5})'`;
+                style += `:enable=between(t,${fadeOut},${fadeOut + 5})*fade(t,${fadeOut},${fadeOut + 5})`;
             }
         }
 

@@ -2,7 +2,7 @@ name: Merge Audio and Video with Background Sound & Captions
 
 
 permissions:
-  contents: write  # ✅ This line gives write access to the repository
+  contents: write  # This line gives write access to the repository
 
 on:
   workflow_dispatch:
@@ -464,7 +464,7 @@ jobs:
           # Commit cleanup if there are changes
           if [ -n "$(git status --porcelain)" ]; then
             git add -A
-            git commit -m "🧹 Auto-cleanup: Remove old files and temp directory [skip ci]"
+            git commit -m "Auto-cleanup: Remove old files and temp directory [skip ci]"
             git push
             echo "Cleanup changes committed"
           fi
