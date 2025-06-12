@@ -78,7 +78,7 @@ jobs:
           # Parse caption config JSON
           CAPTION_CONFIG='${{ github.event.inputs.caption_config }}'
           echo "caption_text=$(echo "$CAPTION_CONFIG" | jq -r '.text // ""')" >> $GITHUB_OUTPUT
-          echo "caption_style=$(echo "$CAPTION_CONFIG" | jq -r '.style // "fontsize=40:fontcolor=ffffff:box=1:boxcolor=000000@0.8:boxborderw=1"')" >> $GITHUB_OUTPUT
+          echo "caption_style=$(echo "$CAPTION_CONFIG" | jq -r '.style // "fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5"')" >> $GITHUB_OUTPUT
           echo "caption_position=$(echo "$CAPTION_CONFIG" | jq -r '.position // "bottom_center"')" >> $GITHUB_OUTPUT
 
       - name: Set up FFmpeg and tools
@@ -409,18 +409,55 @@ jobs:
           CAPTION_STYLE="${{ steps.params.outputs.caption_style }}"
           CAPTION_POSITION="${{ steps.params.outputs.caption_position }}"
           
-          # Determine caption position coordinates
+          # Define padding values for caption safety
+          PADDING_X="30"  # Horizontal padding from edges
+          PADDING_Y="30"  # Vertical padding from edges
+          
+          echo "Using caption padding: X=${PADDING_X}px, Y=${PADDING_Y}px"
+          
+          # Determine caption position coordinates with proper padding
           case "$CAPTION_POSITION" in
-            "top_left") CAPTION_X="10"; CAPTION_Y="10" ;;
-            "top_center") CAPTION_X="(w-text_w)/2"; CAPTION_Y="10" ;;
-            "top_right") CAPTION_X="w-text_w-10"; CAPTION_Y="10" ;;
-            "center_left") CAPTION_X="10"; CAPTION_Y="(h-text_h)/2" ;;
-            "center") CAPTION_X="(w-text_w)/2"; CAPTION_Y="(h-text_h)/2" ;;
-            "center_right") CAPTION_X="w-text_w-10"; CAPTION_Y="(h-text_h)/2" ;;
-            "bottom_left") CAPTION_X="10"; CAPTION_Y="h-text_h-10" ;;
-            "bottom_center") CAPTION_X="(w-text_w)/2"; CAPTION_Y="h-text_h-10" ;;
-            "bottom_right") CAPTION_X="w-text_w-10"; CAPTION_Y="h-text_h-10" ;;
-            *) CAPTION_X="(w-text_w)/2"; CAPTION_Y="h-text_h-10" ;;  # default to bottom_center
+            "top_left") 
+              CAPTION_X="$PADDING_X"
+              CAPTION_Y="$PADDING_Y" 
+              ;;
+            "top_center") 
+              CAPTION_X="max($PADDING_X, min(w-text_w-$PADDING_X, (w-text_w)/2))"
+              CAPTION_Y="$PADDING_Y" 
+              ;;
+            "top_right") 
+              CAPTION_X="w-text_w-$PADDING_X"
+              CAPTION_Y="$PADDING_Y" 
+              ;;
+            "center_left") 
+              CAPTION_X="$PADDING_X"
+              CAPTION_Y="max($PADDING_Y, min(h-text_h-$PADDING_Y, (h-text_h)/2))" 
+              ;;
+            "center") 
+              CAPTION_X="max($PADDING_X, min(w-text_w-$PADDING_X, (w-text_w)/2))"
+              CAPTION_Y="max($PADDING_Y, min(h-text_h-$PADDING_Y, (h-text_h)/2))" 
+              ;;
+            "center_right") 
+              CAPTION_X="w-text_w-$PADDING_X"
+              CAPTION_Y="max($PADDING_Y, min(h-text_h-$PADDING_Y, (h-text_h)/2))" 
+              ;;
+            "bottom_left") 
+              CAPTION_X="$PADDING_X"
+              CAPTION_Y="h-text_h-$PADDING_Y" 
+              ;;
+            "bottom_center") 
+              CAPTION_X="max($PADDING_X, min(w-text_w-$PADDING_X, (w-text_w)/2))"
+              CAPTION_Y="h-text_h-$PADDING_Y" 
+              ;;
+            "bottom_right") 
+              CAPTION_X="w-text_w-$PADDING_X"
+              CAPTION_Y="h-text_h-$PADDING_Y" 
+              ;;
+            *) 
+              # default to bottom_center with padding
+              CAPTION_X="max($PADDING_X, min(w-text_w-$PADDING_X, (w-text_w)/2))"
+              CAPTION_Y="h-text_h-$PADDING_Y" 
+              ;;
           esac
           
           # Build filter complex based on options
@@ -428,10 +465,20 @@ jobs:
           
           # Add caption filter if caption text is provided
           if [ -n "$CAPTION_TEXT" ] && [ "$CAPTION_TEXT" != "" ]; then
-            echo "Adding captions to video..."
+            echo "Adding captions to video with padding protection..."
             ESCAPED_TEXT=$(echo "$CAPTION_TEXT" | sed "s/'/'\\\\''/g; s/:/\\\\:/g; s/,/\\\\,/g")
-            VIDEO_FILTER="${VIDEO_FILTER}; [v_base]drawtext=text='${ESCAPED_TEXT}':${CAPTION_STYLE}:x=${CAPTION_X}:y=${CAPTION_Y}[v_with_text]"
+            
+            # Calculate maximum text width based on video width and padding
+            MAX_TEXT_WIDTH="w-2*$PADDING_X"
+            
+            # Enhanced caption style with text wrapping and padding protection
+            ENHANCED_CAPTION_STYLE="${CAPTION_STYLE}:text_w=${MAX_TEXT_WIDTH}"
+            
+            VIDEO_FILTER="${VIDEO_FILTER}; [v_base]drawtext=text='${ESCAPED_TEXT}':${ENHANCED_CAPTION_STYLE}:x=${CAPTION_X}:y=${CAPTION_Y}[v_with_text]"
             FINAL_VIDEO="[v_with_text]"
+            
+            echo "Caption positioning: X=${CAPTION_X}, Y=${CAPTION_Y}"
+            echo "Maximum text width: ${MAX_TEXT_WIDTH}"
           else
             FINAL_VIDEO="[v_base]"
           fi
