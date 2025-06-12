@@ -105,19 +105,17 @@ jobs:
               exit 1
             fi
             
-            # Create JSON payload with API key included
+            # Create JSON payload (without API key)
             JSON_PAYLOAD=$(jq -n \
               --arg text "$TTS_TEXT" \
               --arg model "$MODEL" \
-              --arg api_key "$API_KEY" \
               '{
                 text: $text,
                 model_id: $model,
                 voice_settings: {
                   stability: 0.5,
                   similarity_boost: 0.75
-                },
-                api_key: $api_key
+                }
               }')
             
             echo "Calling ElevenLabs API..."
@@ -125,11 +123,12 @@ jobs:
             echo "Model: $MODEL"
             echo "Text: $TTS_TEXT"
             
-            # Make API call to ElevenLabs (API key now in payload)
+            # Make API call to ElevenLabs (API key in header)
             HTTP_STATUS=$(curl -s -w "%{http_code}" -o "$TTS_OUTPUT_PATH" \
               -X POST \
               -H "Accept: audio/mpeg" \
               -H "Content-Type: application/json" \
+              -H "xi-api-key: $API_KEY" \
               -d "$JSON_PAYLOAD" \
               "https://api.elevenlabs.io/v1/text-to-speech/$VOICE_ID")
             
