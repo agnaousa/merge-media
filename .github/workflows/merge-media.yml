@@ -40,6 +40,22 @@ on:
         description: "Caption config JSON: {\"text\":\"\", \"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5\", \"position\":\"bottom_center\"}"
         required: false
         default: "{\"text\":\"\", \"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5\", \"position\":\"bottom_center\"}"
+      elevenlabs_tts_text:
+        description: "Text to convert to speech using ElevenLabs TTS (if provided, takes priority over audio files)"
+        required: false
+        default: ""
+      elevenlabs_voice_id:
+        description: "ElevenLabs voice ID"
+        required: false
+        default: "BtWabtumIemAotTjP5sk"
+      elevenlabs_model:
+        description: "ElevenLabs model to use"
+        required: false
+        default: "eleven_flash_v2_5"
+      elevenlabs_api_key:
+        description: "ElevenLabs API key"
+        required: false
+        default: ""
 
 
 jobs:
@@ -57,6 +73,10 @@ jobs:
           echo "audio_base64=${{ github.event.inputs.audio_base64 }}" >> $GITHUB_OUTPUT
           echo "output_path=${{ github.event.inputs.output_path }}" >> $GITHUB_OUTPUT
           echo "audio_handling=${{ github.event.inputs.audio_handling }}" >> $GITHUB_OUTPUT
+          echo "elevenlabs_tts_text=${{ github.event.inputs.elevenlabs_tts_text }}" >> $GITHUB_OUTPUT
+          echo "elevenlabs_voice_id=${{ github.event.inputs.elevenlabs_voice_id }}" >> $GITHUB_OUTPUT
+          echo "elevenlabs_model=${{ github.event.inputs.elevenlabs_model }}" >> $GITHUB_OUTPUT
+          echo "elevenlabs_api_key=${{ github.event.inputs.elevenlabs_api_key }}" >> $GITHUB_OUTPUT
           
           # Parse background sound config JSON
           BACKGROUND_CONFIG='${{ github.event.inputs.background_sound_config }}'
@@ -72,6 +92,75 @@ jobs:
 
       - name: Set up FFmpeg and tools
         run: sudo apt-get update && sudo apt-get install -y ffmpeg jq
+
+      - name: Generate audio using ElevenLabs TTS
+        id: elevenlabs
+        run: |
+          TTS_TEXT="${{ steps.params.outputs.elevenlabs_tts_text }}"
+          
+          if [ -n "$TTS_TEXT" ] && [ "$TTS_TEXT" != "" ]; then
+            echo "Generating audio using ElevenLabs TTS..."
+            mkdir -p temp
+            
+            VOICE_ID="${{ steps.params.outputs.elevenlabs_voice_id }}"
+            MODEL="${{ steps.params.outputs.elevenlabs_model }}"
+            API_KEY="${{ steps.params.outputs.elevenlabs_api_key }}"
+            TTS_OUTPUT_PATH="temp/tts_audio.mp3"
+            
+            # Check if API key is provided
+            if [ -z "$API_KEY" ] || [ "$API_KEY" = "" ]; then
+              echo "Error: ElevenLabs API key is required when using TTS"
+              echo "use_generated_audio=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+            
+            # Create JSON payload with API key included
+            JSON_PAYLOAD=$(jq -n \
+              --arg text "$TTS_TEXT" \
+              --arg model "$MODEL" \
+              --arg api_key "$API_KEY" \
+              '{
+                text: $text,
+                model_id: $model,
+                voice_settings: {
+                  stability: 0.5,
+                  similarity_boost: 0.75
+                },
+                api_key: $api_key
+              }')
+            
+            echo "Calling ElevenLabs API..."
+            echo "Voice ID: $VOICE_ID"
+            echo "Model: $MODEL"
+            echo "Text: $TTS_TEXT"
+            
+            # Make API call to ElevenLabs (API key now in payload)
+            HTTP_STATUS=$(curl -s -w "%{http_code}" -o "$TTS_OUTPUT_PATH" \
+              -X POST \
+              -H "Accept: audio/mpeg" \
+              -H "Content-Type: application/json" \
+              -d "$JSON_PAYLOAD" \
+              "https://api.elevenlabs.io/v1/text-to-speech/$VOICE_ID")
+            
+            if [ "$HTTP_STATUS" -eq 200 ] && [ -s "$TTS_OUTPUT_PATH" ]; then
+              echo "TTS audio generated successfully"
+              echo "File size: $(du -h "$TTS_OUTPUT_PATH" | cut -f1)"
+              echo "generated_audio_path=$TTS_OUTPUT_PATH" >> $GITHUB_OUTPUT
+              echo "use_generated_audio=true" >> $GITHUB_OUTPUT
+            else
+              echo "Failed to generate TTS audio (HTTP Status: $HTTP_STATUS)"
+              if [ -f "$TTS_OUTPUT_PATH" ]; then
+                echo "Response content:"
+                cat "$TTS_OUTPUT_PATH"
+                rm "$TTS_OUTPUT_PATH"
+              fi
+              echo "use_generated_audio=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          else
+            echo "No TTS text provided, skipping audio generation"
+            echo "use_generated_audio=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Download media files if URLs provided
         id: download
@@ -105,87 +194,96 @@ jobs:
             echo "local_video_path=$VIDEO_PATH" >> $GITHUB_OUTPUT
           fi
           
-          # Handle audio input - check for base64 data in audio_base64 field
-          BASE64_DATA=""
-          CONTENT_TYPE="audio/mpeg"
+          # Handle audio input - Priority: TTS > Base64 > URL > Local file
+          USE_GENERATED_AUDIO="${{ steps.elevenlabs.outputs.use_generated_audio }}"
+          GENERATED_AUDIO_PATH="${{ steps.elevenlabs.outputs.generated_audio_path }}"
           
-          # Check if audio_base64 field has data (direct base64 string only)
-          if [ -n "$AUDIO_BASE64" ] && [ "$AUDIO_BASE64" != "" ]; then
-            echo "Processing base64 encoded audio data from audio_base64 field..."
-            BASE64_DATA="$AUDIO_BASE64"
-            echo "Using direct base64 string with default content type: $CONTENT_TYPE"
-          fi
-          
-          # If we found base64 data, process it
-          if [ -n "$BASE64_DATA" ]; then
-            mkdir -p temp
+          if [ "$USE_GENERATED_AUDIO" = "true" ] && [ -n "$GENERATED_AUDIO_PATH" ]; then
+            echo "Using TTS-generated audio: $GENERATED_AUDIO_PATH"
+            echo "local_audio_path=$GENERATED_AUDIO_PATH" >> $GITHUB_OUTPUT
+          else
+            # Fallback to original audio handling logic
+            BASE64_DATA=""
+            CONTENT_TYPE="audio/mpeg"
             
-            if [ -z "$BASE64_DATA" ]; then
-              echo "Error: No base64 audio data found in input"
-              exit 1
+            # Check if audio_base64 field has data (direct base64 string only)
+            if [ -n "$AUDIO_BASE64" ] && [ "$AUDIO_BASE64" != "" ]; then
+              echo "Processing base64 encoded audio data from audio_base64 field..."
+              BASE64_DATA="$AUDIO_BASE64"
+              echo "Using direct base64 string with default content type: $CONTENT_TYPE"
             fi
             
-            # Determine file extension from content type
-            case "$CONTENT_TYPE" in
-              "audio/mpeg"|"audio/mp3")
-                AUDIO_EXT=".mp3"
-                ;;
-              "audio/wav"|"audio/wave")
-                AUDIO_EXT=".wav"
-                ;;
-              "audio/aac")
-                AUDIO_EXT=".aac"
-                ;;
-              "audio/ogg")
-                AUDIO_EXT=".ogg"
-                ;;
-              "audio/m4a")
-                AUDIO_EXT=".m4a"
-                ;;
-              "audio/flac")
-                AUDIO_EXT=".flac"
-                ;;
-              *)
-                echo "Warning: Unknown content type '$CONTENT_TYPE', defaulting to .mp3"
-                AUDIO_EXT=".mp3"
-                ;;
-            esac
-            
-            LOCAL_AUDIO_PATH="temp/decoded_audio${AUDIO_EXT}"
-            
-            # Decode base64 data to file
-            if echo "$BASE64_DATA" | base64 -d > "$LOCAL_AUDIO_PATH"; then
-              # Verify the file was created and has content
-              if [ -s "$LOCAL_AUDIO_PATH" ]; then
-                echo "Base64 audio decoded successfully"
-                echo "Content type: $CONTENT_TYPE"
-                echo "File size: $(du -h "$LOCAL_AUDIO_PATH" | cut -f1)"
+            # If we found base64 data, process it
+            if [ -n "$BASE64_DATA" ]; then
+              mkdir -p temp
+              
+              if [ -z "$BASE64_DATA" ]; then
+                echo "Error: No base64 audio data found in input"
+                exit 1
+              fi
+              
+              # Determine file extension from content type
+              case "$CONTENT_TYPE" in
+                "audio/mpeg"|"audio/mp3")
+                  AUDIO_EXT=".mp3"
+                  ;;
+                "audio/wav"|"audio/wave")
+                  AUDIO_EXT=".wav"
+                  ;;
+                "audio/aac")
+                  AUDIO_EXT=".aac"
+                  ;;
+                "audio/ogg")
+                  AUDIO_EXT=".ogg"
+                  ;;
+                "audio/m4a")
+                  AUDIO_EXT=".m4a"
+                  ;;
+                "audio/flac")
+                  AUDIO_EXT=".flac"
+                  ;;
+                *)
+                  echo "Warning: Unknown content type '$CONTENT_TYPE', defaulting to .mp3"
+                  AUDIO_EXT=".mp3"
+                  ;;
+              esac
+              
+              LOCAL_AUDIO_PATH="temp/decoded_audio${AUDIO_EXT}"
+              
+              # Decode base64 data to file
+              if echo "$BASE64_DATA" | base64 -d > "$LOCAL_AUDIO_PATH"; then
+                # Verify the file was created and has content
+                if [ -s "$LOCAL_AUDIO_PATH" ]; then
+                  echo "Base64 audio decoded successfully"
+                  echo "Content type: $CONTENT_TYPE"
+                  echo "File size: $(du -h "$LOCAL_AUDIO_PATH" | cut -f1)"
+                  echo "local_audio_path=$LOCAL_AUDIO_PATH" >> $GITHUB_OUTPUT
+                else
+                  echo "Error: Decoded audio file is empty"
+                  exit 1
+                fi
+              else
+                echo "Error: Failed to decode base64 audio data"
+                exit 1
+              fi
+            elif is_url "$AUDIO_PATH"; then
+              echo "Audio input is a URL: $AUDIO_PATH"
+              echo "Downloading audio file..."
+              mkdir -p temp
+              AUDIO_EXT=$(echo "$AUDIO_PATH" | grep -oE '\.(mp3|wav|aac|ogg|m4a|flac)(\?.*)?$' | sed 's/\?.*//' || echo ".mp3")
+              LOCAL_AUDIO_PATH="temp/downloaded_audio${AUDIO_EXT}"
+              
+              if curl -L -o "$LOCAL_AUDIO_PATH" "$AUDIO_PATH"; then
+                echo "Audio downloaded successfully"
                 echo "local_audio_path=$LOCAL_AUDIO_PATH" >> $GITHUB_OUTPUT
               else
-                echo "Error: Decoded audio file is empty"
+                echo "Failed to download audio from URL"
                 exit 1
               fi
             else
-              echo "Error: Failed to decode base64 audio data"
-              exit 1
+              echo "Audio input is a local path: $AUDIO_PATH"
+              echo "local_audio_path=$AUDIO_PATH" >> $GITHUB_OUTPUT
             fi
-          elif is_url "$AUDIO_PATH"; then
-            echo "Audio input is a URL: $AUDIO_PATH"
-            echo "Downloading audio file..."
-            mkdir -p temp
-            AUDIO_EXT=$(echo "$AUDIO_PATH" | grep -oE '\.(mp3|wav|aac|ogg|m4a|flac)(\?.*)?$' | sed 's/\?.*//' || echo ".mp3")
-            LOCAL_AUDIO_PATH="temp/downloaded_audio${AUDIO_EXT}"
-            
-            if curl -L -o "$LOCAL_AUDIO_PATH" "$AUDIO_PATH"; then
-              echo "Audio downloaded successfully"
-              echo "local_audio_path=$LOCAL_AUDIO_PATH" >> $GITHUB_OUTPUT
-            else
-              echo "Failed to download audio from URL"
-              exit 1
-            fi
-          else
-            echo "Audio input is a local path: $AUDIO_PATH"
-            echo "local_audio_path=$AUDIO_PATH" >> $GITHUB_OUTPUT
           fi
           
           # Handle background sound input (similar to main audio handling)
@@ -251,9 +349,22 @@ jobs:
             echo "Error: Video file not found at ${{ steps.download.outputs.local_video_path }}"
             exit 1
           fi
-          if [ ! -f "${{ steps.download.outputs.local_audio_path }}" ]; then
-            echo "Error: Audio file not found at ${{ steps.download.outputs.local_audio_path }}"
-            exit 1
+          
+          # Check if TTS was used or if we need to validate other audio sources
+          USE_GENERATED_AUDIO="${{ steps.elevenlabs.outputs.use_generated_audio }}"
+          if [ "$USE_GENERATED_AUDIO" = "true" ]; then
+            GENERATED_AUDIO_PATH="${{ steps.elevenlabs.outputs.generated_audio_path }}"
+            if [ ! -f "$GENERATED_AUDIO_PATH" ]; then
+              echo "Error: TTS-generated audio file not found at $GENERATED_AUDIO_PATH"
+              exit 1
+            else
+              echo "TTS-generated audio file validated: $GENERATED_AUDIO_PATH"
+            fi
+          else
+            if [ ! -f "${{ steps.download.outputs.local_audio_path }}" ]; then
+              echo "Error: Audio file not found at ${{ steps.download.outputs.local_audio_path }}"
+              exit 1
+            fi
           fi
           
           # Validate background sound if provided
@@ -278,9 +389,20 @@ jobs:
         run: |
           echo "Starting merge process..."
           echo "Video: ${{ steps.params.outputs.video_path }}"
-          echo "Audio: ${{ steps.params.outputs.audio_path }}"
+          
+          # Display audio source information
+          USE_GENERATED_AUDIO="${{ steps.elevenlabs.outputs.use_generated_audio }}"
+          if [ "$USE_GENERATED_AUDIO" = "true" ]; then
+            echo "Audio: TTS-generated from text: '${{ steps.params.outputs.elevenlabs_tts_text }}'"
+            echo "Voice ID: ${{ steps.params.outputs.elevenlabs_voice_id }}"
+            echo "Model: ${{ steps.params.outputs.elevenlabs_model }}"
+            echo "Local Audio: ${{ steps.elevenlabs.outputs.generated_audio_path }}"
+          else
+            echo "Audio: ${{ steps.params.outputs.audio_path }}"
+            echo "Local Audio: ${{ steps.download.outputs.local_audio_path }}"
+          fi
+          
           echo "Local Video: ${{ steps.download.outputs.local_video_path }}"
-          echo "Local Audio: ${{ steps.download.outputs.local_audio_path }}"
           echo "Background Sound: ${{ steps.download.outputs.local_background_path }}"
           echo "Caption Text: ${{ steps.params.outputs.caption_text }}"
           echo "Output: ${{ steps.output.outputs.unique_output }}"

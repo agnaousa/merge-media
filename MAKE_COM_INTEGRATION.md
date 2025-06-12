@@ -1,10 +1,18 @@
-# How to Use This Audio/Video Merger with Background Sound & Captions in Make.com
+# How to Use This Audio/Video Merger with TTS, Background Sound & Captions in Make.com
 
-This guide explains how to integrate the GitHub Actions workflow for merging audio and video files with background sound and caption support using Make.com scenarios.
+This guide explains how to integrate the GitHub Actions workflow for merging audio and video files with **ElevenLabs Text-to-Speech**, background sound, and caption support using Make.com scenarios.
+
+## 🆕 New Features
+
+- **🤖 ElevenLabs TTS Integration**: Generate high-quality speech from text
+- **🎵 Background Sound Control**: Add ambient music with volume control  
+- **📝 Dynamic Captions**: Customizable text overlays with positioning
+- **🔄 Smart Audio Priority**: TTS → Base64 → URL → Local file
 
 ## Overview
 
 This workflow can:
+- **Generate AI speech** from text using ElevenLabs TTS
 - Merge audio files with video files
 - Add background sound/music with volume control
 - Add text captions with customizable positioning and styling
@@ -17,7 +25,8 @@ This workflow can:
 
 1. A GitHub repository with this workflow: `https://github.com/agnaousa/merge-media`
 2. A GitHub Personal Access Token with `repo` permissions
-3. Make.com account
+3. **ElevenLabs API key** (for TTS functionality)
+4. Make.com account
 
 ## Quick Start for agnaousa/merge-media Repository
 
@@ -34,20 +43,43 @@ This workflow can:
 }
 ```
 
-**Example Request Body** (Basic):
+## 🤖 TTS Examples
+
+### Example 1: Basic TTS Video Generation
 ```json
 {
   "ref": "main",
   "inputs": {
     "video_path": "https://your-video-url.com/video.mp4",
-    "audio_path": "https://your-audio-url.com/audio.mp3",
-    "output_path": "output/merged.mp4",
+    "elevenlabs_tts_text": "Welcome to our comprehensive tutorial on artificial intelligence and machine learning.",
+    "elevenlabs_voice_id": "BtWabtumIemAotTjP5sk",
+    "elevenlabs_model": "eleven_flash_v2_5",
+    "elevenlabs_api_key": "sk_your_elevenlabs_api_key_here",
+    "output_path": "output/ai_tutorial.mp4",
     "audio_handling": "replace"
   }
 }
 ```
 
-**Example Request Body** (With Background Sound & Captions):
+### Example 2: TTS + Background Music + Captions
+```json
+{
+  "ref": "main",
+  "inputs": {
+    "video_path": "https://your-video-url.com/video.mp4",
+    "elevenlabs_tts_text": "Discover the future of technology with our innovative AI solutions that will transform your business.",
+    "elevenlabs_voice_id": "BtWabtumIemAotTjP5sk",
+    "elevenlabs_model": "eleven_flash_v2_5",
+    "elevenlabs_api_key": "sk_your_elevenlabs_api_key_here",
+    "background_sound_config": "{\"path\":\"https://your-music-url.com/ambient.mp3\",\"base64\":\"\",\"volume\":\"0.15\"}",
+    "caption_config": "{\"text\":\"AI Innovation 2025\",\"style\":\"fontsize=32:fontcolor=ffffff:box=1:boxcolor=000000@0.8:boxborderw=2\",\"position\":\"top_center\"}",
+    "output_path": "output/ai_promo.mp4",
+    "audio_handling": "replace"
+  }
+}
+```
+
+### Example 3: Traditional Audio (No TTS)
 ```json
 {
   "ref": "main",
@@ -61,13 +93,6 @@ This workflow can:
   }
 }
 ```
-
-## Prerequisites
-
-1. A GitHub repository with this workflow
-2. A GitHub Personal Access Token with `repo` permissions
-3. Make.com account
-
 ## Make.com Integration Methods
 
 ### Method 1: HTTP Module (Recommended)
@@ -85,380 +110,355 @@ Headers:
   - Content-Type: application/json
 ```
 
-#### Step 2: Configure Request Body
+#### Step 2: Configure Request Body with TTS
 ```json
 {
   "ref": "main",
   "inputs": {
     "video_path": "{{video_url_or_path}}",
-    "audio_path": "{{audio_url_or_path}}",
+    "elevenlabs_tts_text": "{{tts_text_content}}",
+    "elevenlabs_voice_id": "{{voice_id_or_default}}",
+    "elevenlabs_model": "{{model_or_default}}",
+    "elevenlabs_api_key": "{{elevenlabs_api_key}}",
+    "audio_path": "{{fallback_audio_url}}",
     "audio_base64": "{{base64_audio_data}}",
     "background_sound_config": "{\"path\":\"{{background_music_url}}\",\"base64\":\"{{base64_background_data}}\",\"volume\":\"{{background_volume_level}}\"}",
     "caption_config": "{\"text\":\"{{caption_text}}\",\"style\":\"{{caption_style}}\",\"position\":\"{{caption_position}}\"}",
-    "output_path": "output/merged.mp4",
+    "output_path": "output/{{output_filename}}.mp4",
     "audio_handling": "replace"
   }
 }
 ```
 
-### Method 2: GitHub Module
+## 🎯 Complete Input Parameters
 
-Use Make.com's built-in GitHub modules for a more integrated approach.
+### **🤖 ElevenLabs TTS Parameters (NEW)**
+- `elevenlabs_tts_text`: Text to convert to speech (**takes priority over other audio**)
+- `elevenlabs_voice_id`: Voice ID (default: `BtWabtumIemAotTjP5sk`)
+- `elevenlabs_model`: AI model (default: `eleven_flash_v2_5`)
+- `elevenlabs_api_key`: Your ElevenLabs API key (**required for TTS**)
 
-#### Configuration
-```
-Module: GitHub > Custom API Call
-URL: /repos/agnaousa/merge-media/actions/workflows/merge-media.yml/dispatches
-Method: POST
-Body: {same as above}
-```
+### **📹 Core Parameters**
+- `video_path`: URL to video file or local path (**required**)
+- `output_path`: Where to save the merged file (**required**)
+- `audio_path`: URL to audio file (ignored if TTS is used)
+- `audio_base64`: Base64 encoded audio data
+- `audio_handling`: `"replace"`, `"mix"`, or `"keep_video"`
 
-## Working with JSON Configuration in Make.com
-
-Since the workflow now uses JSON strings for background sound and caption configuration, you'll need to construct these properly in Make.com.
-
-### Building JSON Strings in Make.com
-
-#### Method 1: Direct String Construction
-```
-"background_sound_config": "{\"path\":\"{{bundle.inputData.musicUrl}}\",\"base64\":\"\",\"volume\":\"{{bundle.inputData.volume}}\"}"
-```
-
-#### Method 2: Using Make.com's JSON Module
-1. Add a "Tools > Set Variable" module
-2. Set variable name: `background_config`
-3. Set variable value: 
-   ```json
-   {
-     "path": "{{bundle.inputData.musicUrl}}",
-     "base64": "",
-     "volume": "{{bundle.inputData.volume}}"
-   }
-   ```
-4. In the HTTP module, reference: `{{background_config}}`
-
-#### Method 3: Using Make.com's Text Aggregator
-Combine multiple data points into a JSON string using text aggregation.
-
-### JSON Escaping in Make.com
-When constructing JSON strings manually, remember to:
-- Escape quotes: `\"` instead of `"`
-- Escape backslashes: `\\` instead of `\`
-- Use Make.com's `escapeJSON()` function for dynamic text
-
-### Example with Make.com Functions
-```
-"caption_config": "{\"text\":\"{{escapeJSON(bundle.inputData.title)}}\",\"style\":\"fontsize={{bundle.inputData.fontSize}}:fontcolor={{bundle.inputData.color}}\",\"position\":\"{{bundle.inputData.position}}\"}"
-```
-
-## Input Parameters Explained
-
-## Input Parameters Explained
-
-### Required Parameters
-- `video_path`: URL to video file or local path
-- `output_path`: Where to save the merged file
-
-### Optional Parameters
-- `audio_path`: URL to audio file (ignored if audio_base64 is provided)
-- `audio_base64`: Base64 encoded audio data for multipart uploads
-- `audio_handling`: How to handle existing video audio
-  - `"replace"`: Replace video audio with new audio
-  - `"mix"`: Mix video audio with new audio
-  - `"keep_video"`: Keep original video audio only
-
-### Background Sound Configuration (JSON String)
-- `background_sound_config`: JSON string containing background sound settings
-  ```json
-  {
-    "path": "URL to background music file or local path",
-    "base64": "Base64 encoded background sound data",
-    "volume": "Volume level (0.0 to 1.0, default: 0.3)"
-  }
-  ```
-
-### Caption Configuration (JSON String)
-- `caption_config`: JSON string containing caption settings
-  ```json
-  {
-    "text": "Text to display on the video",
-    "style": "FFmpeg drawtext style options",
-    "position": "Caption position (top_left, top_center, etc.)"
-  }
-  ```
-  
-#### Caption Position Options
-- `top_left`, `top_center`, `top_right`
-- `center_left`, `center`, `center_right` 
-- `bottom_left`, `bottom_center`, `bottom_right`
-
-#### Caption Style Examples
-- Default: `fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5`
-- Custom: `fontsize=30:fontcolor=yellow`, `fontcolor=red:box=1:boxcolor=blue@0.7`
-
-## Common Make.com Scenarios
-
-### Scenario 1: Process Form Uploads
-```
-Trigger: Webhook (form submission)
-↓
-HTTP Module: Upload files to temporary storage
-↓
-Data Transformer: Convert audio to base64
-↓
-HTTP Module: Trigger GitHub workflow
-↓
-Delay: Wait for processing
-↓
-HTTP Module: Check workflow status
-↓
-Email: Send download link
-```
-
-### Scenario 2: Social Media Content Creation
-```
-Trigger: Google Drive (new file)
-↓
-Google Drive: Get file content
-↓
-Data Transformer: Prepare inputs
-↓
-HTTP Module: Trigger merge workflow
-↓
-Slack: Notify team with result
-```
-
-### Scenario 4: Educational Content Creation
-```
-Trigger: Google Sheets (new row with lesson data)
-↓
-HTTP Module: Download lesson video and audio
-↓
-Data Transformer: Generate captions from lesson title
-↓
-HTTP Module: Trigger merge workflow with background music
-↓
-Google Drive: Save processed video
-↓
-Email: Send download link to instructor
-```
-
-### Scenario 5: Social Media Content with Branding
-```
-Trigger: Webhook (content upload)
-↓
-AI Module: Generate captions from content
-↓
-HTTP Module: Add brand background music
-↓
-HTTP Module: Trigger merge workflow
-↓
-Multiple Social Media: Post to platforms
-```
-
-## Sample Make.com HTTP Configuration
-
-### Basic Setup
+### **🎵 Background Sound Configuration (JSON String)**
 ```json
 {
-  "url": "https://api.github.com/repos/agnaousa/merge-media/actions/workflows/merge-media.yml/dispatches",
-  "method": "POST",
-  "headers": {
-    "Authorization": "Bearer YOUR_GITHUB_TOKEN",
-    "Accept": "application/vnd.github.v3+json",
-    "Content-Type": "application/json"
-  },
-  "body": {
-    "ref": "main",
-    "inputs": {
-      "video_path": "https://example.com/video.mp4",
-      "audio_path": "https://example.com/audio.mp3",
-      "output_path": "output/merged.mp4",
-      "audio_handling": "replace"
-    }
-  }
+  "path": "URL to background music file",
+  "base64": "Base64 encoded background sound",
+  "volume": "Volume level (0.0 to 1.0, default: 0.3)"
 }
 ```
 
-### With Background Sound & Captions
+### **📝 Caption Configuration (JSON String)**
+```json
+{
+  "text": "Text to display on the video",
+  "style": "FFmpeg drawtext style options",
+  "position": "Caption position (top_left, center, etc.)"
+}
+```
+
+## 🎬 Advanced Make.com Scenarios
+
+### Scenario 1: AI Content Creation Pipeline
+```
+Trigger: Webhook (content request)
+↓
+OpenAI: Generate script from topic
+↓
+Data Transformer: Prepare TTS text
+↓
+HTTP Module: Trigger GitHub workflow with TTS
+↓
+Delay: Wait for processing (2-5 minutes)
+↓
+GitHub: Check workflow status
+↓
+Slack: Send download link when complete
+```
+
+**Make.com HTTP Configuration:**
 ```json
 {
   "ref": "main",
   "inputs": {
-    "video_path": "https://example.com/video.mp4",
-    "audio_path": "https://example.com/narration.mp3",
-    "background_sound_config": "{\"path\":\"https://example.com/background-music.mp3\",\"base64\":\"\",\"volume\":\"0.25\"}",
-    "caption_config": "{\"text\":\"{{bundle.inputData.title}}\",\"style\":\"fontsize=32:fontcolor=white:box=1:boxcolor=black@0.8:boxborderw=3\",\"position\":\"bottom_center\"}",
-    "output_path": "output/branded_{{formatDate(now; 'YYYYMMDD_HHmmss')}}.mp4",
-    "audio_handling": "mix"
+    "video_path": "{{bundle.inputData.videoTemplate}}",
+    "elevenlabs_tts_text": "{{openai_generated_script}}",
+    "elevenlabs_voice_id": "BtWabtumIemAotTjP5sk",
+    "elevenlabs_model": "eleven_flash_v2_5", 
+    "elevenlabs_api_key": "{{connection.elevenlabs_key}}",
+    "background_sound_config": "{\"path\":\"{{bundle.inputData.backgroundMusic}}\",\"volume\":\"0.2\"}",
+    "caption_config": "{\"text\":\"{{bundle.inputData.title}}\",\"style\":\"fontsize=28:fontcolor=white:box=1:boxcolor=black@0.8\",\"position\":\"top_center\"}",
+    "output_path": "output/ai_content_{{formatDate(now; 'YYYYMMDD_HHmmss')}}.mp4",
+    "audio_handling": "replace"
   }
 }
 ```
 
-### With Base64 Audio Upload
+### Scenario 2: Multi-Language Video Generation
+```
+Trigger: Google Sheets (new row with content)
+↓
+Google Translate: Translate text to target language
+↓
+Text Processing: Select appropriate voice for language
+↓
+HTTP Module: Generate TTS video
+↓
+Google Drive: Save to language-specific folder
+↓
+Email: Notify content team
+```
+
+**Dynamic Voice Selection:**
+```json
+{
+  "elevenlabs_voice_id": "{{if(bundle.inputData.language = 'en'; 'BtWabtumIemAotTjP5sk'; if(bundle.inputData.language = 'es'; 'spanish_voice_id'; 'default_voice_id'))}}",
+  "elevenlabs_tts_text": "{{translated_text}}"
+}
+```
+
+### Scenario 3: E-Learning Content Automation
+```
+Trigger: Airtable (new lesson record)
+↓
+Airtable: Get lesson details
+↓
+HTTP Module: Download lesson template video
+↓
+Text Processing: Format lesson script
+↓
+HTTP Module: Generate TTS lesson video
+↓
+Vimeo: Upload processed video
+↓
+Airtable: Update record with video link
+```
+
+**Lesson Video Configuration:**
 ```json
 {
   "ref": "main",
   "inputs": {
-    "video_path": "https://example.com/video.mp4",
-    "audio_base64": "{{base64(bundle.inputData.audioFile)}}",
-    "background_sound_config": "{\"path\":\"\",\"base64\":\"{{base64(bundle.inputData.backgroundMusic)}}\",\"volume\":\"0.2\"}",
-    "caption_config": "{\"text\":\"{{bundle.inputData.videoTitle}}\",\"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5\",\"position\":\"top_center\"}",
-    "output_path": "output/merged_{{formatDate(now; 'YYYYMMDD_HHmmss')}}.mp4",
-    "audio_handling": "mix"
+    "video_path": "{{bundle.lesson.template_video_url}}",
+    "elevenlabs_tts_text": "{{bundle.lesson.full_script}}",
+    "elevenlabs_voice_id": "{{bundle.lesson.instructor_voice_id}}",
+    "elevenlabs_api_key": "{{connection.elevenlabs_key}}",
+    "background_sound_config": "{\"path\":\"{{bundle.lesson.background_music}}\",\"volume\":\"0.15\"}",
+    "caption_config": "{\"text\":\"{{bundle.lesson.title}} - {{bundle.lesson.chapter}}\",\"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=blue@0.8\",\"position\":\"bottom_center\"}",
+    "output_path": "output/lesson_{{bundle.lesson.id}}_{{formatDate(now; 'YYYYMMDD')}}.mp4",
+    "audio_handling": "replace"
   }
 }
 ```
 
-## Workflow Status Monitoring
-
-To monitor the workflow status in Make.com:
-
-### Check Workflow Run Status
+### Scenario 4: Social Media Content with Brand Voice
 ```
+Trigger: Instagram (new post idea)
+↓
+ChatGPT: Generate engaging script
+↓
+HTTP Module: Create branded video with TTS
+↓
+Image Processing: Generate thumbnail
+↓
+Multiple Social Platforms: Cross-post content
+```
+
+**Branded Content Configuration:**
+```json
+{
+  "elevenlabs_tts_text": "{{chatgpt_generated_script}}",
+  "elevenlabs_voice_id": "{{company_brand_voice_id}}",
+  "background_sound_config": "{\"path\":\"{{brand_background_music}}\",\"volume\":\"0.25\"}",
+  "caption_config": "{\"text\":\"{{company_name}} - {{formatDate(now; 'MMM YYYY')}}\",\"style\":\"fontsize=20:fontcolor=#FF6B35:box=1:boxcolor=#FFFFFF@0.9\",\"position\":\"bottom_right\"}"
+}
+```
+
+## 🔧 Advanced Make.com Functions
+
+### Dynamic TTS Text Generation
+```javascript
+// In Make.com Text Processing Module
+const script = `
+Welcome to ${bundle.inputData.companyName}! 
+Today we're excited to share ${bundle.inputData.productName}, 
+which ${bundle.inputData.productDescription}. 
+This ${bundle.inputData.contentType} will show you exactly how to get started.
+`;
+
+return {
+  tts_text: script,
+  duration_estimate: Math.ceil(script.length / 10) // rough estimate
+}
+```
+
+### Voice Selection Logic
+```javascript
+// Voice selection based on content type
+const voiceMap = {
+  'professional': 'BtWabtumIemAotTjP5sk',
+  'friendly': 'friendly_voice_id',
+  'energetic': 'energetic_voice_id',
+  'calm': 'calm_voice_id'
+};
+
+return {
+  voice_id: voiceMap[bundle.inputData.tone] || 'BtWabtumIemAotTjP5sk'
+}
+```
+
+### Dynamic Background Music Selection
+```javascript
+// Background music based on video type
+const musicMap = {
+  'tutorial': 'https://assets.example.com/calm-tutorial.mp3',
+  'promotional': 'https://assets.example.com/upbeat-promo.mp3',
+  'corporate': 'https://assets.example.com/professional-bg.mp3'
+};
+
+const volumeMap = {
+  'tutorial': '0.15',  // Low volume for voice content
+  'promotional': '0.4', // Higher volume for energy
+  'corporate': '0.2'   // Moderate volume
+};
+
+return {
+  background_config: JSON.stringify({
+    path: musicMap[bundle.inputData.videoType],
+    volume: volumeMap[bundle.inputData.videoType]
+  })
+}
+```
+
+## 📊 Workflow Monitoring and Results
+
+### Check Workflow Status
+```
+Module: HTTP > Make a Request
 URL: https://api.github.com/repos/agnaousa/merge-media/actions/runs
 Method: GET
 Headers: Authorization: Bearer {token}
+Query Parameters:
+  - workflow_id: merge-media.yml
+  - per_page: 10
+  - sort: created
+  - direction: desc
 ```
 
-Filter results by:
-- `workflow_id`: The ID of your workflow
-- `created`: Recent runs
-- `status`: "completed", "in_progress", "queued"
+### Get Processing Results
+Once completed, check for:
+- **Artifact Download URL**: For immediate access
+- **Repository File URL**: For permanent storage
+- **Raw File URL**: For direct embedding
+- **Processing Logs**: For debugging
 
-### Get Workflow Results
-Once completed, the workflow:
-1. Uploads the merged file as an artifact
-2. Commits the file to the repository
-3. Provides download URLs in the workflow logs
+## 🚨 Error Handling & Troubleshooting
 
-## Error Handling in Make.com
+### Common TTS Issues
+1. **Invalid API Key**: Verify ElevenLabs API key
+2. **Voice ID Not Found**: Check voice ID exists in your account
+3. **Text Too Long**: ElevenLabs has character limits
+4. **Rate Limiting**: Implement delays between requests
 
-Add error handling to your scenarios:
-
+### Make.com Error Handler Setup
 ```
 Error Handler Module
 ↓
-Condition: If HTTP status ≠ 204
+Condition: Check error type
+  - 401: API key issue → Send admin alert
+  - 422: Invalid parameters → Log and retry
+  - 429: Rate limit → Wait and retry
+  - 500: Server error → Escalate to support
 ↓
-Email/Slack: Send error notification
+Response Action: Notify user with appropriate message
 ```
 
-## Advanced Features
+## 💡 Sample Complete Make.com Scenario
 
-### Dynamic File Naming
-Use Make.com functions to create unique filenames:
-```
-"output_path": "output/merged_{{formatDate(now; 'YYYYMMDD_HHmmss')}}_{{random}}.mp4"
-```
+Here's a complete Make.com scenario template for TTS video generation:
 
-### Conditional Audio Handling
-Use Make.com routers to determine audio handling based on content:
-```
-Router → 
-  Route 1: If music file → "mix"
-  Route 2: If voice file → "replace"
-  Route 3: If no audio → "keep_video"
-```
-
-### Dynamic Caption Generation
-Use AI or text processing to generate captions:
-```
-"caption_config": "{\"text\":\"{{trim(bundle.inputData.description; 50)}}...\",\"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5\",\"position\":\"{{if(bundle.inputData.isTitle; 'top_center'; 'bottom_center')}}\"}"
-```
-
-### Background Music Selection
-Use conditional logic for background music:
-```
-"background_sound_config": "{\"path\":\"{{if(bundle.inputData.mood = 'upbeat'; 'https://example.com/upbeat.mp3'; 'https://example.com/calm.mp3')}}\",\"base64\":\"\",\"volume\":\"{{if(bundle.inputData.hasVoiceover; '0.2'; '0.5')}}\"}"
-```
-
-## Advanced Caption and Background Sound Features
-
-### Caption Styling Examples
-
-#### Corporate Branding
-```json
-"caption_config": "{\"text\":\"Your Company Name\",\"style\":\"fontsize=36:fontcolor=#003366:box=1:boxcolor=#FFFFFF@0.9:boxborderw=2\",\"position\":\"bottom_center\"}"
-```
-
-#### Gaming/Fun Style
-```json
-"caption_config": "{\"text\":\"GAME OVER!\",\"style\":\"fontsize=28:fontcolor=yellow:box=1:boxcolor=red@0.7:boxborderw=3\",\"position\":\"center\"}"
-```
-
-#### Subtle/Professional
-```json
-"caption_config": "{\"text\":\"Professional Training\",\"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=black@0.3:boxborderw=1\",\"position\":\"bottom_right\"}"
-```
-
-### Background Sound Volume Guidelines
-
-- **0.1-0.2**: Subtle ambient background
-- **0.2-0.3**: Gentle background music with voiceover
-- **0.3-0.4**: Moderate background music
-- **0.4-0.6**: Prominent background music without voiceover
-- **0.6-1.0**: Dominant background music (use sparingly)
-
-### Multi-Language Caption Support
-
-Use Make.com's translation modules:
-```
-Text Translator Module
-↓
-"caption_config": "{\"text\":\"{{translated_text}}\",\"style\":\"fontsize=28:fontcolor=white:box=1:boxcolor=blue@0.8\",\"position\":\"bottom_center\"}"
-```
-
-## File Size Validation
-Add data validation before triggering:
-```
-Filter: bundle.inputData.fileSize < 100000000  // 100MB limit
-```
-
-## Output and Results
-
-The workflow provides:
-- **Artifact**: Downloadable merged video file
-- **Committed File**: File stored in repository
-- **URLs**: Direct links to access the file
-- **Metadata**: File size, processing time, etc.
-
-## Tips for Make.com Integration
-
-1. **Rate Limiting**: GitHub API has rate limits - add delays between calls
-2. **File Size**: Large files may timeout - consider chunked uploads
-3. **Error Recovery**: Implement retry logic for failed workflows
-4. **Caching**: Store results to avoid reprocessing identical requests
-5. **Webhooks**: Set up GitHub webhooks to notify Make.com when processing completes
-
-## Example Webhook Payload
-
-When the workflow completes, you can receive this data:
 ```json
 {
-  "action": "completed",
-  "workflow_run": {
-    "id": 123456789,
-    "status": "completed",
-    "conclusion": "success",
-    "html_url": "https://github.com/user/repo/actions/runs/123456789"
-  }
+  "name": "AI Video Generator with TTS",
+  "modules": [
+    {
+      "id": 1,
+      "module": "webhook",
+      "type": "trigger",
+      "data": {
+        "webhook_name": "video_generation_request"
+      }
+    },
+    {
+      "id": 2,
+      "module": "text-parser",
+      "data": {
+        "text": "{{1.data.script}}",
+        "max_length": 5000
+      }
+    },
+    {
+      "id": 3,
+      "module": "http",
+      "data": {
+        "url": "https://api.github.com/repos/agnaousa/merge-media/actions/workflows/merge-media.yml/dispatches",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer {{connection.github_token}}",
+          "Accept": "application/vnd.github.v3+json",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "ref": "main",
+          "inputs": {
+            "video_path": "{{1.data.video_url}}",
+            "elevenlabs_tts_text": "{{2.parsed_text}}",
+            "elevenlabs_voice_id": "{{1.data.voice_id}}",
+            "elevenlabs_model": "eleven_flash_v2_5",
+            "elevenlabs_api_key": "{{connection.elevenlabs_key}}",
+            "background_sound_config": "{{1.data.background_config}}",
+            "caption_config": "{{1.data.caption_config}}",
+            "output_path": "output/generated_{{formatDate(now; 'YYYYMMDD_HHmmss')}}.mp4",
+            "audio_handling": "replace"
+          }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "module": "tools-sleep",
+      "data": {
+        "delay": 180
+      }
+    },
+    {
+      "id": 5,
+      "module": "http",
+      "data": {
+        "url": "https://api.github.com/repos/agnaousa/merge-media/actions/runs",
+        "method": "GET",
+        "headers": {
+          "Authorization": "Bearer {{connection.github_token}}"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "module": "email",
+      "data": {
+        "to": "{{1.data.email}}",
+        "subject": "Your AI video is ready!",
+        "html": "Your video has been processed successfully. Download it here: {{5.data.download_url}}"
+      }
+    }
+  ]
 }
 ```
 
-## Troubleshooting
-
-### Common Issues
-1. **401 Unauthorized**: Check GitHub token permissions
-2. **404 Not Found**: Verify repository and workflow file names
-3. **422 Validation Error**: Check input parameter formats
-4. **Workflow Failed**: Check GitHub Actions logs for FFmpeg errors
-
-### Debug Mode
-Add debug logging to your Make.com scenario:
-```
-Data Store: Log all API requests and responses
-Filter: Only process successful responses (status 204)
-```
-
-This integration allows you to leverage GitHub's powerful computing resources for media processing while maintaining the flexibility of Make.com's automation platform.
+This comprehensive integration allows you to leverage both GitHub's computing power and ElevenLabs' AI voice generation within Make.com's flexible automation platform, creating a powerful pipeline for automated video content creation.
