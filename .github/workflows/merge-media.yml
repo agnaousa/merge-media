@@ -436,7 +436,7 @@ jobs:
             
             # Check animation type
             if [ "$CAPTION_ANIMATION" = "word_by_word" ]; then
-              echo "Adding animated word-by-word captions to video..."
+              echo "Adding animated word-by-word captions to video (one word at a time)..."
               
               # Split text into words
               IFS=' ' read -ra WORDS <<< "$CAPTION_TEXT"
@@ -445,33 +445,27 @@ jobs:
               # Use configurable word duration
               WORD_DURATION="$CAPTION_WORD_DURATION"
               
-              echo "Caption animation: $WORD_COUNT words, ${WORD_DURATION}s per word"
+              echo "Caption animation: $WORD_COUNT words, ${WORD_DURATION}s per word (individual words)"
               
               # Start with base video
               CURRENT_VIDEO_TAG="[v_base]"
               CAPTION_FILTERS=""
               
-              # Create filters for each cumulative word reveal
+              # Create filters for each individual word (not cumulative)
               for i in "${!WORDS[@]}"; do
-                # Build cumulative text (all words up to current index)
-                CUMULATIVE_TEXT=""
-                for j in $(seq 0 $i); do
-                  if [ $j -eq 0 ]; then
-                    CUMULATIVE_TEXT="${WORDS[$j]}"
-                  else
-                    CUMULATIVE_TEXT="${CUMULATIVE_TEXT} ${WORDS[$j]}"
-                  fi
-                done
+                # Get only the current word
+                CURRENT_WORD="${WORDS[$i]}"
                 
                 # Escape special characters for FFmpeg
-                ESCAPED_TEXT=$(echo "$CUMULATIVE_TEXT" | sed "s/'/'\\\\''/g; s/:/\\\\:/g; s/,/\\\\,/g")
+                ESCAPED_TEXT=$(echo "$CURRENT_WORD" | sed "s/'/'\\\\''/g; s/:/\\\\:/g; s/,/\\\\,/g")
                 
-                # Calculate start time for this word
+                # Calculate start and end time for this word
                 START_TIME=$(echo "$i * $WORD_DURATION" | bc -l)
+                END_TIME=$(echo "($i + 1) * $WORD_DURATION" | bc -l)
                 
-                # Create the drawtext filter with enable condition
+                # Create the drawtext filter with enable condition for specific time window
                 NEXT_VIDEO_TAG="[caption_step_${i}]"
-                CAPTION_FILTERS="${CAPTION_FILTERS}; ${CURRENT_VIDEO_TAG}drawtext=text='${ESCAPED_TEXT}':${CAPTION_STYLE}:x=${CAPTION_X}:y=${CAPTION_Y}:enable='gte(t,${START_TIME})'${NEXT_VIDEO_TAG}"
+                CAPTION_FILTERS="${CAPTION_FILTERS}; ${CURRENT_VIDEO_TAG}drawtext=text='${ESCAPED_TEXT}':${CAPTION_STYLE}:x=${CAPTION_X}:y=${CAPTION_Y}:enable='between(t,${START_TIME},${END_TIME})'${NEXT_VIDEO_TAG}"
                 
                 CURRENT_VIDEO_TAG="${NEXT_VIDEO_TAG}"
               done
@@ -480,7 +474,7 @@ jobs:
               VIDEO_FILTER="${VIDEO_FILTER}${CAPTION_FILTERS}"
               FINAL_VIDEO="${CURRENT_VIDEO_TAG}"
               
-              echo "Created word-by-word caption animation with $WORD_COUNT steps"
+              echo "Created individual word animation with $WORD_COUNT steps"
             else
               echo "Adding static captions to video..."
               # Original static caption behavior
