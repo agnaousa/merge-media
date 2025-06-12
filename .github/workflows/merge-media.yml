@@ -37,9 +37,9 @@ on:
         required: false
         default: "{\"path\":\"\", \"base64\":\"\", \"volume\":\"0.3\"}"
       caption_config:
-        description: "Caption config JSON: {\"text\":\"\", \"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5\", \"position\":\"bottom_center\", \"word_duration\":\"0.6\", \"animation\":\"word_by_word\"}"
+        description: "Caption config JSON: {\"text\":\"\", \"font\":\"Arial\", \"fontsize\":\"24\", \"fontcolor\":\"white\", \"box\":\"1\", \"boxcolor\":\"black@0.5\", \"boxborderw\":\"5\", \"position\":\"bottom_center\", \"word_duration\":\"0.6\", \"animation\":\"word_by_word\"}"
         required: false
-        default: "{\"text\":\"\", \"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5\", \"position\":\"bottom_center\", \"word_duration\":\"0.6\", \"animation\":\"word_by_word\"}"
+        default: "{\"text\":\"\", \"font\":\"Arial\", \"fontsize\":\"24\", \"fontcolor\":\"white\", \"box\":\"1\", \"boxcolor\":\"black@0.5\", \"boxborderw\":\"5\", \"position\":\"bottom_center\", \"word_duration\":\"0.6\", \"animation\":\"word_by_word\"}"
       elevenlabs_config:
         description: "ElevenLabs TTS config JSON: {\"text\":\"\", \"voice_id\":\"BtWabtumIemAotTjP5sk\", \"model\":\"eleven_flash_v2_5\", \"api_key\":\"\"}"
         required: false
@@ -78,13 +78,28 @@ jobs:
           # Parse caption config JSON
           CAPTION_CONFIG='${{ github.event.inputs.caption_config }}'
           echo "caption_text=$(echo "$CAPTION_CONFIG" | jq -r '.text // ""')" >> $GITHUB_OUTPUT
-          echo "caption_style=$(echo "$CAPTION_CONFIG" | jq -r '.style // "fontsize=40:fontcolor=ffffff:box=1:boxcolor=000000@0.8:boxborderw=1"')" >> $GITHUB_OUTPUT
+          echo "caption_font=$(echo "$CAPTION_CONFIG" | jq -r '.font // "Arial"')" >> $GITHUB_OUTPUT
+          echo "caption_fontsize=$(echo "$CAPTION_CONFIG" | jq -r '.fontsize // "24"')" >> $GITHUB_OUTPUT
+          echo "caption_fontcolor=$(echo "$CAPTION_CONFIG" | jq -r '.fontcolor // "white"')" >> $GITHUB_OUTPUT
+          echo "caption_box=$(echo "$CAPTION_CONFIG" | jq -r '.box // "1"')" >> $GITHUB_OUTPUT
+          echo "caption_boxcolor=$(echo "$CAPTION_CONFIG" | jq -r '.boxcolor // "black@0.5"')" >> $GITHUB_OUTPUT
+          echo "caption_boxborderw=$(echo "$CAPTION_CONFIG" | jq -r '.boxborderw // "5"')" >> $GITHUB_OUTPUT
           echo "caption_position=$(echo "$CAPTION_CONFIG" | jq -r '.position // "bottom_center"')" >> $GITHUB_OUTPUT
           echo "caption_word_duration=$(echo "$CAPTION_CONFIG" | jq -r '.word_duration // "0.6"')" >> $GITHUB_OUTPUT
           echo "caption_animation=$(echo "$CAPTION_CONFIG" | jq -r '.animation // "word_by_word"')" >> $GITHUB_OUTPUT
 
       - name: Set up FFmpeg and tools
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg jq bc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg jq bc
+          
+          # Install common fonts for captions
+          sudo apt-get install -y fonts-dejavu-core fonts-liberation fonts-noto-core
+          sudo apt-get install -y fontconfig
+          
+          # List available fonts for debugging
+          echo "Available fonts:"
+          fc-list | grep -E "(Arial|DejaVu|Liberation|Noto)" | head -10
 
       - name: Generate audio using ElevenLabs TTS
         id: elevenlabs
@@ -408,11 +423,52 @@ jobs:
           BACKGROUND_PATH="${{ steps.download.outputs.local_background_path }}"
           BACKGROUND_VOLUME="${{ steps.params.outputs.background_volume }}"
           CAPTION_TEXT="${{ steps.params.outputs.caption_text }}"
-          CAPTION_STYLE="${{ steps.params.outputs.caption_style }}"
+          CAPTION_FONT="${{ steps.params.outputs.caption_font }}"
+          CAPTION_FONTSIZE="${{ steps.params.outputs.caption_fontsize }}"
+          CAPTION_FONTCOLOR="${{ steps.params.outputs.caption_fontcolor }}"
+          CAPTION_BOX="${{ steps.params.outputs.caption_box }}"
+          CAPTION_BOXCOLOR="${{ steps.params.outputs.caption_boxcolor }}"
+          CAPTION_BOXBORDERW="${{ steps.params.outputs.caption_boxborderw }}"
           CAPTION_POSITION="${{ steps.params.outputs.caption_position }}"
           CAPTION_WORD_DURATION="${{ steps.params.outputs.caption_word_duration }}"
           CAPTION_ANIMATION="${{ steps.params.outputs.caption_animation }}"
-          CAPTION_POSITION="${{ steps.params.outputs.caption_position }}"
+          
+          # Build caption style from individual parameters
+          CAPTION_STYLE="fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:fontsize=${CAPTION_FONTSIZE}:fontcolor=${CAPTION_FONTCOLOR}"
+          
+          # Map font names to actual font files
+          case "$CAPTION_FONT" in
+            "Arial"|"arial")
+              FONT_FILE="/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+              ;;
+            "Times"|"times"|"Times New Roman")
+              FONT_FILE="/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"
+              ;;
+            "Courier"|"courier"|"Courier New")
+              FONT_FILE="/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf"
+              ;;
+            "DejaVu"|"dejavu")
+              FONT_FILE="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+              ;;
+            "Noto"|"noto")
+              FONT_FILE="/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"
+              ;;
+            *)
+              echo "Font '$CAPTION_FONT' not recognized, using DejaVu Sans as fallback"
+              FONT_FILE="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+              ;;
+          esac
+          
+          # Update caption style with selected font
+          CAPTION_STYLE="fontfile=${FONT_FILE}:fontsize=${CAPTION_FONTSIZE}:fontcolor=${CAPTION_FONTCOLOR}"
+          
+          # Add box styling if enabled
+          if [ "$CAPTION_BOX" = "1" ]; then
+            CAPTION_STYLE="${CAPTION_STYLE}:box=1:boxcolor=${CAPTION_BOXCOLOR}:boxborderw=${CAPTION_BOXBORDERW}"
+          fi
+          
+          echo "Caption font: $CAPTION_FONT (${FONT_FILE})"
+          echo "Caption style: $CAPTION_STYLE"
           
           # Determine caption position coordinates
           case "$CAPTION_POSITION" in
