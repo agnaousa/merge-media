@@ -1,11 +1,13 @@
-# How to Use This Audio/Video Merger in Make.com
+# How to Use This Audio/Video Merger with Background Sound & Captions in Make.com
 
-This guide explains how to integrate the GitHub Actions workflow for merging audio and video files with Make.com scenarios.
+This guide explains how to integrate the GitHub Actions workflow for merging audio and video files with background sound and caption support using Make.com scenarios.
 
 ## Overview
 
 This workflow can:
 - Merge audio files with video files
+- Add background sound/music with volume control
+- Add text captions with customizable positioning and styling
 - Handle URLs or base64-encoded media
 - Replace, mix, or keep original video audio
 - Generate timestamped output files
@@ -32,7 +34,7 @@ This workflow can:
 }
 ```
 
-**Example Request Body**:
+**Example Request Body** (Basic):
 ```json
 {
   "ref": "main",
@@ -41,6 +43,24 @@ This workflow can:
     "audio_path": "https://your-audio-url.com/audio.mp3",
     "output_path": "output/merged.mp4",
     "audio_handling": "replace"
+  }
+}
+```
+
+**Example Request Body** (With Background Sound & Captions):
+```json
+{
+  "ref": "main",
+  "inputs": {
+    "video_path": "https://your-video-url.com/video.mp4",
+    "audio_path": "https://your-audio-url.com/audio.mp3",
+    "background_sound_path": "https://your-music-url.com/background.mp3",
+    "background_volume": "0.3",
+    "caption_text": "Welcome to our tutorial!",
+    "caption_position": "bottom_center",
+    "caption_style": "fontsize=28:fontcolor=yellow:box=1:boxcolor=black@0.8",
+    "output_path": "output/merged.mp4",
+    "audio_handling": "mix"
   }
 }
 ```
@@ -76,6 +96,12 @@ Headers:
     "video_path": "{{video_url_or_path}}",
     "audio_path": "{{audio_url_or_path}}",
     "audio_base64": "{{base64_audio_data}}",
+    "background_sound_path": "{{background_music_url}}",
+    "background_sound_base64": "{{base64_background_data}}",
+    "background_volume": "{{background_volume_level}}",
+    "caption_text": "{{caption_text}}",
+    "caption_position": "{{caption_position}}",
+    "caption_style": "{{caption_style}}",
     "output_path": "output/merged.mp4",
     "audio_handling": "replace"
   }
@@ -96,6 +122,8 @@ Body: {same as above}
 
 ## Input Parameters Explained
 
+## Input Parameters Explained
+
 ### Required Parameters
 - `video_path`: URL to video file or local path
 - `output_path`: Where to save the merged file
@@ -107,6 +135,19 @@ Body: {same as above}
   - `"replace"`: Replace video audio with new audio
   - `"mix"`: Mix video audio with new audio
   - `"keep_video"`: Keep original video audio only
+
+### Background Sound Parameters (Optional)
+- `background_sound_path`: URL to background music file or local path
+- `background_sound_base64`: Base64 encoded background sound data
+- `background_volume`: Volume level for background sound (0.0 to 1.0, default: 0.3)
+
+### Caption Parameters (Optional)
+- `caption_text`: Text to display on the video
+- `caption_position`: Where to place captions
+  - Options: `top_left`, `top_center`, `top_right`, `center_left`, `center`, `center_right`, `bottom_left`, `bottom_center`, `bottom_right`
+- `caption_style`: FFmpeg drawtext style options
+  - Default: `fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5`
+  - Examples: `fontsize=30:fontcolor=yellow`, `fontcolor=red:box=1:boxcolor=blue@0.7`
 
 ## Common Make.com Scenarios
 
@@ -140,17 +181,32 @@ HTTP Module: Trigger merge workflow
 Slack: Notify team with result
 ```
 
-### Scenario 3: Automated Podcast Processing
+### Scenario 4: Educational Content Creation
 ```
-Trigger: RSS Feed (new episode)
+Trigger: Google Sheets (new row with lesson data)
 ↓
-HTTP Module: Download audio
+HTTP Module: Download lesson video and audio
 ↓
-AI Module: Generate video background
+Data Transformer: Generate captions from lesson title
+↓
+HTTP Module: Trigger merge workflow with background music
+↓
+Google Drive: Save processed video
+↓
+Email: Send download link to instructor
+```
+
+### Scenario 5: Social Media Content with Branding
+```
+Trigger: Webhook (content upload)
+↓
+AI Module: Generate captions from content
+↓
+HTTP Module: Add brand background music
 ↓
 HTTP Module: Trigger merge workflow
 ↓
-YouTube: Upload merged video
+Multiple Social Media: Post to platforms
 ```
 
 ## Sample Make.com HTTP Configuration
@@ -177,6 +233,24 @@ YouTube: Upload merged video
 }
 ```
 
+### With Background Sound & Captions
+```json
+{
+  "ref": "main",
+  "inputs": {
+    "video_path": "https://example.com/video.mp4",
+    "audio_path": "https://example.com/narration.mp3",
+    "background_sound_path": "https://example.com/background-music.mp3",
+    "background_volume": "0.25",
+    "caption_text": "{{bundle.inputData.title}}",
+    "caption_position": "bottom_center",
+    "caption_style": "fontsize=32:fontcolor=white:box=1:boxcolor=black@0.8:boxborderw=3",
+    "output_path": "output/branded_{{formatDate(now; 'YYYYMMDD_HHmmss')}}.mp4",
+    "audio_handling": "mix"
+  }
+}
+```
+
 ### With Base64 Audio Upload
 ```json
 {
@@ -184,6 +258,10 @@ YouTube: Upload merged video
   "inputs": {
     "video_path": "https://example.com/video.mp4",
     "audio_base64": "{{base64(bundle.inputData.audioFile)}}",
+    "background_sound_base64": "{{base64(bundle.inputData.backgroundMusic)}}",
+    "background_volume": "0.2",
+    "caption_text": "{{bundle.inputData.videoTitle}}",
+    "caption_position": "top_center",
     "output_path": "output/merged_{{formatDate(now; 'YYYYMMDD_HHmmss')}}.mp4",
     "audio_handling": "mix"
   }
@@ -241,7 +319,58 @@ Router →
   Route 3: If no audio → "keep_video"
 ```
 
-### File Size Validation
+### Dynamic Caption Generation
+Use AI or text processing to generate captions:
+```
+"caption_text": "{{trim(bundle.inputData.description; 50)}}..."
+"caption_position": "{{if(bundle.inputData.isTitle; 'top_center'; 'bottom_center')}}"
+```
+
+### Background Music Selection
+Use conditional logic for background music:
+```
+"background_sound_path": "{{if(bundle.inputData.mood = 'upbeat'; 'https://example.com/upbeat.mp3'; 'https://example.com/calm.mp3')}}"
+"background_volume": "{{if(bundle.inputData.hasVoiceover; '0.2'; '0.5')}}"
+```
+
+## Advanced Caption and Background Sound Features
+
+### Caption Styling Examples
+
+#### Corporate Branding
+```json
+"caption_style": "fontsize=36:fontcolor=#003366:box=1:boxcolor=#FFFFFF@0.9:boxborderw=2"
+```
+
+#### Gaming/Fun Style
+```json
+"caption_style": "fontsize=28:fontcolor=yellow:box=1:boxcolor=red@0.7:boxborderw=3"
+```
+
+#### Subtle/Professional
+```json
+"caption_style": "fontsize=24:fontcolor=white:box=1:boxcolor=black@0.3:boxborderw=1"
+```
+
+### Background Sound Volume Guidelines
+
+- **0.1-0.2**: Subtle ambient background
+- **0.2-0.3**: Gentle background music with voiceover
+- **0.3-0.4**: Moderate background music
+- **0.4-0.6**: Prominent background music without voiceover
+- **0.6-1.0**: Dominant background music (use sparingly)
+
+### Multi-Language Caption Support
+
+Use Make.com's translation modules:
+```
+Text Translator Module
+↓
+"caption_text": "{{translated_text}}"
+"caption_style": "fontsize=28:fontcolor=white:box=1:boxcolor=blue@0.8"
+```
+
+## File Size Validation
 Add data validation before triggering:
 ```
 Filter: bundle.inputData.fileSize < 100000000  // 100MB limit
