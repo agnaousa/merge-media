@@ -389,8 +389,89 @@ jobs:
           
           echo "Executing FFmpeg with complex filter..."
           echo "Filter: $COMPLETE_FILTER"
+          echo "Inputs: $INPUTS"
           
-          eval "ffmpeg -y $INPUTS -filter_complex \"$COMPLETE_FILTER\" -map \"$FINAL_VIDEO\" -map \"[a]\" -c:v libx264 -c:a aac -t $AUDIO_DURATION \"${{ steps.output.outputs.unique_output }}\""
+          # Execute FFmpeg command without eval to avoid quoting issues
+          if [ -n "$BACKGROUND_PATH" ] && [ "$BACKGROUND_PATH" != "" ]; then
+            case "${{ steps.params.outputs.audio_handling }}" in
+              "replace")
+                ffmpeg -y \
+                  -i "${{ steps.download.outputs.local_video_path }}" \
+                  -i "${{ steps.download.outputs.local_audio_path }}" \
+                  -i "$BACKGROUND_PATH" \
+                  -filter_complex "$COMPLETE_FILTER" \
+                  -map "$FINAL_VIDEO" \
+                  -map "[a]" \
+                  -c:v libx264 \
+                  -c:a aac \
+                  -t $AUDIO_DURATION \
+                  "${{ steps.output.outputs.unique_output }}"
+                ;;
+              "mix")
+                ffmpeg -y \
+                  -i "${{ steps.download.outputs.local_video_path }}" \
+                  -i "${{ steps.download.outputs.local_audio_path }}" \
+                  -i "$BACKGROUND_PATH" \
+                  -filter_complex "$COMPLETE_FILTER" \
+                  -map "$FINAL_VIDEO" \
+                  -map "[a]" \
+                  -c:v libx264 \
+                  -c:a aac \
+                  -t $AUDIO_DURATION \
+                  "${{ steps.output.outputs.unique_output }}"
+                ;;
+              "keep_video")
+                ffmpeg -y \
+                  -i "${{ steps.download.outputs.local_video_path }}" \
+                  -i "$BACKGROUND_PATH" \
+                  -filter_complex "$COMPLETE_FILTER" \
+                  -map "$FINAL_VIDEO" \
+                  -map "[a]" \
+                  -c:v libx264 \
+                  -c:a aac \
+                  -t $AUDIO_DURATION \
+                  "${{ steps.output.outputs.unique_output }}"
+                ;;
+            esac
+          else
+            case "${{ steps.params.outputs.audio_handling }}" in
+              "replace")
+                ffmpeg -y \
+                  -i "${{ steps.download.outputs.local_video_path }}" \
+                  -i "${{ steps.download.outputs.local_audio_path }}" \
+                  -filter_complex "$COMPLETE_FILTER" \
+                  -map "$FINAL_VIDEO" \
+                  -map "[a]" \
+                  -c:v libx264 \
+                  -c:a aac \
+                  -t $AUDIO_DURATION \
+                  "${{ steps.output.outputs.unique_output }}"
+                ;;
+              "mix")
+                ffmpeg -y \
+                  -i "${{ steps.download.outputs.local_video_path }}" \
+                  -i "${{ steps.download.outputs.local_audio_path }}" \
+                  -filter_complex "$COMPLETE_FILTER" \
+                  -map "$FINAL_VIDEO" \
+                  -map "[a]" \
+                  -c:v libx264 \
+                  -c:a aac \
+                  -t $AUDIO_DURATION \
+                  "${{ steps.output.outputs.unique_output }}"
+                ;;
+              "keep_video")
+                ffmpeg -y \
+                  -i "${{ steps.download.outputs.local_video_path }}" \
+                  -filter_complex "$COMPLETE_FILTER" \
+                  -map "$FINAL_VIDEO" \
+                  -map "[a]" \
+                  -c:v libx264 \
+                  -c:a aac \
+                  -t $AUDIO_DURATION \
+                  "${{ steps.output.outputs.unique_output }}"
+                ;;
+            esac
+          fi
           
           echo "Merge completed successfully!"
           echo "Output file size: $(du -h "${{ steps.output.outputs.unique_output }}" | cut -f1)"
