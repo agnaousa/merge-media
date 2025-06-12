@@ -18,13 +18,16 @@ body {
     z-index: 1;
     min-height: 100vh;
     padding: 20px;
+    display: flex;
+    flex-direction: column;
 }
 
 /* Header */
 .header {
     text-align: center;
-    margin-bottom: 40px;
-    padding: 40px 0;
+    margin-bottom: 20px;
+    padding: 20px 0;
+    flex-shrink: 0;
 }
 
 .header h1 {
@@ -50,10 +53,24 @@ body {
     gap: 40px;
     max-width: 1400px;
     margin: 0 auto;
+    height: calc(100vh - 160px);
+    flex: 1;
 }
 
 /* Panels */
-.controls-panel,
+.controls-panel {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 20px;
+    padding: 30px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    overflow-y: auto;
+    overflow-x: hidden;
+    height: 100%;
+    position: relative;
+}
+
 .output-panel {
     background: rgba(255, 255, 255, 0.05);
     border-radius: 20px;
@@ -61,6 +78,11 @@ body {
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
 }
 
 /* Control Sections */
@@ -201,7 +223,16 @@ body {
 
 /* Preview Section */
 .preview-section {
+    flex-shrink: 0;
     margin-bottom: 30px;
+    position: sticky;
+    top: 0;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 20px;
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    z-index: 10;
 }
 
 .preview-section h3 {
@@ -254,6 +285,17 @@ body {
 }
 
 /* Output Section */
+.output-section {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    padding-top: 20px;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 12px;
+    padding: 20px;
+    margin-top: 20px;
+}
+
 .output-section h3 {
     font-size: 1.3rem;
     margin-bottom: 20px;
@@ -318,12 +360,97 @@ body {
     word-break: break-all;
 }
 
-/* Checkbox Styling */
+/* New control styles for additional drawtext filters */
+select {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    padding: 10px;
+    color: white;
+    font-size: 14px;
+    width: 100%;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 10px center;
+    background-repeat: no-repeat;
+    background-size: 16px;
+    padding-right: 40px;
+}
+
+select:focus {
+    outline: none;
+    border-color: rgba(102, 126, 234, 0.5);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+select option {
+    background: #2d3748;
+    color: white;
+    padding: 10px;
+}
+
+input[type="number"] {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    padding: 10px;
+    color: white;
+    font-size: 14px;
+    width: 100%;
+}
+
+input[type="number"]:focus {
+    outline: none;
+    border-color: rgba(102, 126, 234, 0.5);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+input[type="number"]:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Enhanced checkbox styles */
 input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    margin-right: 8px;
-    accent-color: #667eea;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+    position: relative;
+    margin-right: 10px;
+}
+
+input[type="checkbox"]:checked {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-color: rgba(102, 126, 234, 0.8);
+}
+
+input[type="checkbox"]:checked::after {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+/* Section spacing */
+.control-section {
+    margin-bottom: 30px;
+}
+
+.control-section h3 {
+    margin-bottom: 20px;
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+    border-bottom: 2px solid rgba(102, 126, 234, 0.3);
+    padding-bottom: 10px;
 }
 
 /* Responsive Design */
@@ -366,6 +493,39 @@ input[type="checkbox"] {
     }
 }
 
+@media (max-width: 1200px) {
+    .main-content {
+        grid-template-columns: 1fr;
+        gap: 30px;
+        height: auto;
+        min-height: calc(100vh - 200px);
+    }
+    
+    .controls-panel {
+        height: 60vh;
+        max-height: 60vh;
+        overflow-y: auto;
+        border-right: none;
+        border-bottom: 2px solid rgba(102, 126, 234, 0.3);
+    }
+    
+    .output-panel {
+        height: 70vh;
+        min-height: 50vh;
+        border-left: none;
+        border-top: 2px solid rgba(102, 126, 234, 0.3);
+    }
+    
+    .preview-section {
+        position: relative;
+        top: auto;
+    }
+    
+    .preview-container {
+        max-width: 250px;
+    }
+}
+
 /* Scrollbar Styling */
 ::-webkit-scrollbar {
     width: 8px;
@@ -382,4 +542,51 @@ input[type="checkbox"] {
 
 ::-webkit-scrollbar-thumb:hover {
     background: #5a67d8;
+}
+
+/* Enhanced scrollbar styling for both panels */
+.controls-panel::-webkit-scrollbar,
+.output-section::-webkit-scrollbar {
+    width: 8px;
+}
+
+.controls-panel::-webkit-scrollbar-track,
+.output-section::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    margin: 10px 0;
+}
+
+.controls-panel::-webkit-scrollbar-thumb,
+.output-section::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.controls-panel::-webkit-scrollbar-thumb:hover,
+.output-section::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(135deg, #5a67d8 0%, #6b5b95 100%);
+}
+
+/* Firefox scrollbar styling */
+.controls-panel,
+.output-section {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(102, 126, 234, 0.6) rgba(255, 255, 255, 0.1);
+}
+
+/* Smooth scrolling behavior */
+.controls-panel,
+.output-section {
+    scroll-behavior: smooth;
+}
+
+/* Panel separation visual enhancement */
+.controls-panel {
+    border-right: 2px solid rgba(102, 126, 234, 0.3);
+}
+
+.output-panel {
+    border-left: 2px solid rgba(102, 126, 234, 0.3);
 }

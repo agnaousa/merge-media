@@ -27,14 +27,88 @@
                         <input type="text" id="text-input" placeholder="Enter your caption text" value="Welcome to our tutorial!">
                     </div>
                     <div class="control-group">
+                        <label for="font-family">Font Family:</label>
+                        <select id="font-family">
+                            <option value="DejaVu Sans">DejaVu Sans</option>
+                            <option value="Arial">Arial</option>
+                            <option value="Times New Roman">Times New Roman</option>
+                            <option value="Helvetica">Helvetica</option>
+                            <option value="Courier New">Courier New</option>
+                            <option value="Impact">Impact</option>
+                            <option value="Comic Sans MS">Comic Sans MS</option>
+                            <option value="Verdana">Verdana</option>
+                            <option value="Georgia">Georgia</option>
+                            <option value="Trebuchet MS">Trebuchet MS</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
                         <label for="font-size">Font Size:</label>
-                        <input type="range" id="font-size" min="12" max="72" value="40">
+                        <input type="range" id="font-size" min="12" max="120" value="40">
                         <span class="value-display" id="font-size-value">40</span>
                     </div>
                     <div class="control-group">
                         <label for="font-color">Font Color:</label>
                         <input type="color" id="font-color" value="#ffffff">
                         <input type="text" id="font-color-text" value="#ffffff">
+                    </div>
+                    <div class="control-group">
+                        <label for="text-align">Text Alignment:</label>
+                        <select id="text-align">
+                            <option value="left">Left</option>
+                            <option value="center" selected>Center</option>
+                            <option value="right">Right</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label for="line-spacing">Line Spacing:</label>
+                        <input type="range" id="line-spacing" min="0" max="50" value="0">
+                        <span class="value-display" id="line-spacing-value">0</span>
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <h3>Text Effects</h3>
+                    <div class="control-group">
+                        <label>
+                            <input type="checkbox" id="enable-outline">
+                            Enable Text Outline
+                        </label>
+                    </div>
+                    <div class="control-group">
+                        <label for="outline-color">Outline Color:</label>
+                        <input type="color" id="outline-color" value="#000000">
+                        <input type="text" id="outline-color-text" value="#000000">
+                    </div>
+                    <div class="control-group">
+                        <label for="outline-width">Outline Width:</label>
+                        <input type="range" id="outline-width" min="0" max="10" value="2">
+                        <span class="value-display" id="outline-width-value">2</span>
+                    </div>
+                    <div class="control-group">
+                        <label>
+                            <input type="checkbox" id="enable-shadow">
+                            Enable Text Shadow
+                        </label>
+                    </div>
+                    <div class="control-group">
+                        <label for="shadow-color">Shadow Color:</label>
+                        <input type="color" id="shadow-color" value="#000000">
+                        <input type="text" id="shadow-color-text" value="#000000">
+                    </div>
+                    <div class="control-group">
+                        <label for="shadow-x">Shadow X Offset:</label>
+                        <input type="range" id="shadow-x" min="-20" max="20" value="2">
+                        <span class="value-display" id="shadow-x-value">2</span>
+                    </div>
+                    <div class="control-group">
+                        <label for="shadow-y">Shadow Y Offset:</label>
+                        <input type="range" id="shadow-y" min="-20" max="20" value="2">
+                        <span class="value-display" id="shadow-y-value">2</span>
+                    </div>
+                    <div class="control-group">
+                        <label for="text-alpha">Text Alpha (Transparency):</label>
+                        <input type="range" id="text-alpha" min="0" max="1" step="0.1" value="1">
+                        <span class="value-display" id="text-alpha-value">1</span>
                     </div>
                 </div>
 
@@ -60,6 +134,73 @@
                         <label for="box-border">Border Width:</label>
                         <input type="range" id="box-border" min="0" max="10" value="1">
                         <span class="value-display" id="box-border-value">1</span>
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <h3>Transform & Animation</h3>
+                    <div class="control-group">
+                        <label for="text-rotation">Text Rotation (degrees):</label>
+                        <input type="range" id="text-rotation" min="-180" max="180" value="0">
+                        <span class="value-display" id="text-rotation-value">0</span>
+                    </div>
+                    <div class="control-group">
+                        <label for="text-spacing">Character Spacing:</label>
+                        <input type="range" id="text-spacing" min="-5" max="20" value="0">
+                        <span class="value-display" id="text-spacing-value">0</span>
+                    </div>
+                    <div class="control-group">
+                        <label>
+                            <input type="checkbox" id="enable-expansion">
+                            Enable Text Expansion
+                        </label>
+                    </div>
+                    <div class="control-group">
+                        <label for="expansion-mode">Expansion Mode:</label>
+                        <select id="expansion-mode">
+                            <option value="none">None</option>
+                            <option value="strftime">Date/Time</option>
+                            <option value="normal">Normal</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label>
+                            <input type="checkbox" id="enable-fade">
+                            Enable Fade Effect
+                        </label>
+                    </div>
+                    <div class="control-group">
+                        <label for="fade-in">Fade In Duration (seconds):</label>
+                        <input type="range" id="fade-in" min="0" max="5" step="0.1" value="0">
+                        <span class="value-display" id="fade-in-value">0</span>
+                    </div>
+                    <div class="control-group">
+                        <label for="fade-out">Fade Out Duration (seconds):</label>
+                        <input type="range" id="fade-out" min="0" max="5" step="0.1" value="0">
+                        <span class="value-display" id="fade-out-value">0</span>
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <h3>Advanced Position</h3>
+                    <div class="control-group">
+                        <label>
+                            <input type="checkbox" id="use-custom-position">
+                            Use Custom X/Y Position
+                        </label>
+                    </div>
+                    <div class="control-group">
+                        <label for="custom-x">X Position:</label>
+                        <input type="number" id="custom-x" min="0" max="1920" value="0" disabled>
+                    </div>
+                    <div class="control-group">
+                        <label for="custom-y">Y Position:</label>
+                        <input type="number" id="custom-y" min="0" max="1080" value="0" disabled>
+                    </div>
+                    <div class="control-group">
+                        <label for="text-padding">Text Padding:</label>
+                        <input type="range" id="text-padding" min="0" max="50" value="10">
+                        <span class="value-display" id="text-padding-value">10</span>
                     </div>
                 </div>
 
