@@ -82,7 +82,7 @@ jobs:
           echo "caption_position=$(echo "$CAPTION_CONFIG" | jq -r '.position // "bottom_center"')" >> $GITHUB_OUTPUT
 
       - name: Set up FFmpeg and tools
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg jq
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg jq bc
 
       - name: Generate audio using ElevenLabs TTS
         id: elevenlabs
@@ -429,7 +429,52 @@ jobs:
           # Add caption filter if caption text is provided
           if [ -n "$CAPTION_TEXT" ] && [ "$CAPTION_TEXT" != "" ]; then
             echo "Adding captions to video..."
-            ESCAPED_TEXT=$(echo "$CAPTION_TEXT" | sed "s/'/'\\\\''/g; s/:/\\\\:/g; s/,/\\\\,/g")
+            
+            # Get video dimensions for text wrapping calculation
+            VIDEO_WIDTH=$(ffprobe -v quiet -select_streams v:0 -show_entries stream=width -of csv=p=0 "${{ steps.download.outputs.local_video_path }}")
+            VIDEO_HEIGHT=$(ffprobe -v quiet -select_streams v:0 -show_entries stream=height -of csv=p=0 "${{ steps.download.outputs.local_video_path }}")
+            
+            # Extract font size from caption style (default to 24 if not found)
+            FONT_SIZE=$(echo "$CAPTION_STYLE" | grep -o 'fontsize=[0-9]*' | cut -d'=' -f2)
+            if [ -z "$FONT_SIZE" ]; then
+              FONT_SIZE=24
+            fi
+            
+            # Calculate approximate characters per line based on video width and font size
+            # Rough estimation: each character is about 0.6 * font_size pixels wide
+            CHAR_WIDTH=$(echo "$FONT_SIZE * 0.6" | bc -l)
+            # Leave 20px margin on each side
+            USABLE_WIDTH=$(echo "$VIDEO_WIDTH - 40" | bc -l)
+            MAX_CHARS_PER_LINE=$(echo "$USABLE_WIDTH / $CHAR_WIDTH" | bc -l | cut -d'.' -f1)
+            
+            # If max chars is too small, set a minimum
+            if [ "$MAX_CHARS_PER_LINE" -lt 20 ]; then
+              MAX_CHARS_PER_LINE=20
+            fi
+            
+            echo "Video dimensions: ${VIDEO_WIDTH}x${VIDEO_HEIGHT}"
+            echo "Font size: ${FONT_SIZE}px"
+            echo "Max characters per line: ${MAX_CHARS_PER_LINE}"
+            
+            # Function to wrap text with line breaks
+            wrap_text() {
+              local text="$1"
+              local max_length="$2"
+              echo "$text" | fold -w "$max_length" -s | tr '\n' '\\n'
+            }
+            
+            # Wrap the caption text
+            WRAPPED_TEXT=$(wrap_text "$CAPTION_TEXT" "$MAX_CHARS_PER_LINE")
+            
+            # Remove trailing \n if present
+            WRAPPED_TEXT=$(echo "$WRAPPED_TEXT" | sed 's/\\n$//')
+            
+            echo "Original text: $CAPTION_TEXT"
+            echo "Wrapped text: $WRAPPED_TEXT"
+            
+            # Escape special characters for FFmpeg
+            ESCAPED_TEXT=$(echo "$WRAPPED_TEXT" | sed "s/'/'\\\\''/g; s/:/\\\\:/g; s/,/\\\\,/g")
+            
             VIDEO_FILTER="${VIDEO_FILTER}; [v_base]drawtext=text='${ESCAPED_TEXT}':${CAPTION_STYLE}:x=${CAPTION_X}:y=${CAPTION_Y}[v_with_text]"
             FINAL_VIDEO="[v_with_text]"
           else
