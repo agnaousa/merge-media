@@ -32,41 +32,14 @@ on:
           - "replace"
           - "mix"
           - "keep_video"
-      background_sound_path:
-        description: "Path to background sound file or URL (optional)"
+      background_sound_config:
+        description: "Background sound config JSON: {\"path\":\"\", \"base64\":\"\", \"volume\":\"0.3\"}"
         required: false
-        default: ""
-      background_sound_base64:
-        description: "Base64 encoded background sound data (optional)"
+        default: "{\"path\":\"\", \"base64\":\"\", \"volume\":\"0.3\"}"
+      caption_config:
+        description: "Caption config JSON: {\"text\":\"\", \"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5\", \"position\":\"bottom_center\"}"
         required: false
-        default: ""
-      background_volume:
-        description: "Background sound volume (0.0 to 1.0, default 0.3)"
-        required: false
-        default: "0.3"
-      caption_text:
-        description: "Caption text to add to video (optional)"
-        required: false
-        default: ""
-      caption_style:
-        description: "Caption style options"
-        required: false
-        default: "fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5"
-      caption_position:
-        description: "Caption position"
-        required: false
-        default: "bottom_center"
-        type: choice
-        options:
-          - "top_left"
-          - "top_center"
-          - "top_right"
-          - "center_left"
-          - "center"
-          - "center_right"
-          - "bottom_left"
-          - "bottom_center"
-          - "bottom_right"
+        default: "{\"text\":\"\", \"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5\", \"position\":\"bottom_center\"}"
 
 
 jobs:
@@ -84,15 +57,21 @@ jobs:
           echo "audio_base64=${{ github.event.inputs.audio_base64 }}" >> $GITHUB_OUTPUT
           echo "output_path=${{ github.event.inputs.output_path }}" >> $GITHUB_OUTPUT
           echo "audio_handling=${{ github.event.inputs.audio_handling }}" >> $GITHUB_OUTPUT
-          echo "background_sound_path=${{ github.event.inputs.background_sound_path }}" >> $GITHUB_OUTPUT
-          echo "background_sound_base64=${{ github.event.inputs.background_sound_base64 }}" >> $GITHUB_OUTPUT
-          echo "background_volume=${{ github.event.inputs.background_volume }}" >> $GITHUB_OUTPUT
-          echo "caption_text=${{ github.event.inputs.caption_text }}" >> $GITHUB_OUTPUT
-          echo "caption_style=${{ github.event.inputs.caption_style }}" >> $GITHUB_OUTPUT
-          echo "caption_position=${{ github.event.inputs.caption_position }}" >> $GITHUB_OUTPUT
+          
+          # Parse background sound config JSON
+          BACKGROUND_CONFIG='${{ github.event.inputs.background_sound_config }}'
+          echo "background_sound_path=$(echo "$BACKGROUND_CONFIG" | jq -r '.path // ""')" >> $GITHUB_OUTPUT
+          echo "background_sound_base64=$(echo "$BACKGROUND_CONFIG" | jq -r '.base64 // ""')" >> $GITHUB_OUTPUT
+          echo "background_volume=$(echo "$BACKGROUND_CONFIG" | jq -r '.volume // "0.3"')" >> $GITHUB_OUTPUT
+          
+          # Parse caption config JSON
+          CAPTION_CONFIG='${{ github.event.inputs.caption_config }}'
+          echo "caption_text=$(echo "$CAPTION_CONFIG" | jq -r '.text // ""')" >> $GITHUB_OUTPUT
+          echo "caption_style=$(echo "$CAPTION_CONFIG" | jq -r '.style // "fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5"')" >> $GITHUB_OUTPUT
+          echo "caption_position=$(echo "$CAPTION_CONFIG" | jq -r '.position // "bottom_center"')" >> $GITHUB_OUTPUT
 
-      - name: Set up FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Set up FFmpeg and tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg jq
 
       - name: Download media files if URLs provided
         id: download
@@ -389,89 +368,8 @@ jobs:
           
           echo "Executing FFmpeg with complex filter..."
           echo "Filter: $COMPLETE_FILTER"
-          echo "Inputs: $INPUTS"
           
-          # Execute FFmpeg command without eval to avoid quoting issues
-          if [ -n "$BACKGROUND_PATH" ] && [ "$BACKGROUND_PATH" != "" ]; then
-            case "${{ steps.params.outputs.audio_handling }}" in
-              "replace")
-                ffmpeg -y \
-                  -i "${{ steps.download.outputs.local_video_path }}" \
-                  -i "${{ steps.download.outputs.local_audio_path }}" \
-                  -i "$BACKGROUND_PATH" \
-                  -filter_complex "$COMPLETE_FILTER" \
-                  -map "$FINAL_VIDEO" \
-                  -map "[a]" \
-                  -c:v libx264 \
-                  -c:a aac \
-                  -t $AUDIO_DURATION \
-                  "${{ steps.output.outputs.unique_output }}"
-                ;;
-              "mix")
-                ffmpeg -y \
-                  -i "${{ steps.download.outputs.local_video_path }}" \
-                  -i "${{ steps.download.outputs.local_audio_path }}" \
-                  -i "$BACKGROUND_PATH" \
-                  -filter_complex "$COMPLETE_FILTER" \
-                  -map "$FINAL_VIDEO" \
-                  -map "[a]" \
-                  -c:v libx264 \
-                  -c:a aac \
-                  -t $AUDIO_DURATION \
-                  "${{ steps.output.outputs.unique_output }}"
-                ;;
-              "keep_video")
-                ffmpeg -y \
-                  -i "${{ steps.download.outputs.local_video_path }}" \
-                  -i "$BACKGROUND_PATH" \
-                  -filter_complex "$COMPLETE_FILTER" \
-                  -map "$FINAL_VIDEO" \
-                  -map "[a]" \
-                  -c:v libx264 \
-                  -c:a aac \
-                  -t $AUDIO_DURATION \
-                  "${{ steps.output.outputs.unique_output }}"
-                ;;
-            esac
-          else
-            case "${{ steps.params.outputs.audio_handling }}" in
-              "replace")
-                ffmpeg -y \
-                  -i "${{ steps.download.outputs.local_video_path }}" \
-                  -i "${{ steps.download.outputs.local_audio_path }}" \
-                  -filter_complex "$COMPLETE_FILTER" \
-                  -map "$FINAL_VIDEO" \
-                  -map "[a]" \
-                  -c:v libx264 \
-                  -c:a aac \
-                  -t $AUDIO_DURATION \
-                  "${{ steps.output.outputs.unique_output }}"
-                ;;
-              "mix")
-                ffmpeg -y \
-                  -i "${{ steps.download.outputs.local_video_path }}" \
-                  -i "${{ steps.download.outputs.local_audio_path }}" \
-                  -filter_complex "$COMPLETE_FILTER" \
-                  -map "$FINAL_VIDEO" \
-                  -map "[a]" \
-                  -c:v libx264 \
-                  -c:a aac \
-                  -t $AUDIO_DURATION \
-                  "${{ steps.output.outputs.unique_output }}"
-                ;;
-              "keep_video")
-                ffmpeg -y \
-                  -i "${{ steps.download.outputs.local_video_path }}" \
-                  -filter_complex "$COMPLETE_FILTER" \
-                  -map "$FINAL_VIDEO" \
-                  -map "[a]" \
-                  -c:v libx264 \
-                  -c:a aac \
-                  -t $AUDIO_DURATION \
-                  "${{ steps.output.outputs.unique_output }}"
-                ;;
-            esac
-          fi
+          eval "ffmpeg -y $INPUTS -filter_complex \"$COMPLETE_FILTER\" -map \"$FINAL_VIDEO\" -map \"[a]\" -c:v libx264 -c:a aac -t $AUDIO_DURATION \"${{ steps.output.outputs.unique_output }}\""
           
           echo "Merge completed successfully!"
           echo "Output file size: $(du -h "${{ steps.output.outputs.unique_output }}" | cut -f1)"
