@@ -37,9 +37,9 @@ on:
         required: false
         default: "{\"path\":\"\", \"base64\":\"\", \"volume\":\"0.3\"}"
       caption_config:
-        description: "Caption config JSON: {\"text\":\"\", \"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5\", \"position\":\"bottom_center\"}"
+        description: "Caption config JSON: {\"text\":\"\", \"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5\", \"position\":\"bottom_center\", \"word_duration\":\"0.6\", \"animation\":\"word_by_word\"}"
         required: false
-        default: "{\"text\":\"\", \"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5\", \"position\":\"bottom_center\"}"
+        default: "{\"text\":\"\", \"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5\", \"position\":\"bottom_center\", \"word_duration\":\"0.6\", \"animation\":\"word_by_word\"}"
       elevenlabs_config:
         description: "ElevenLabs TTS config JSON: {\"text\":\"\", \"voice_id\":\"BtWabtumIemAotTjP5sk\", \"model\":\"eleven_flash_v2_5\", \"api_key\":\"\"}"
         required: false
@@ -80,9 +80,11 @@ jobs:
           echo "caption_text=$(echo "$CAPTION_CONFIG" | jq -r '.text // ""')" >> $GITHUB_OUTPUT
           echo "caption_style=$(echo "$CAPTION_CONFIG" | jq -r '.style // "fontsize=40:fontcolor=ffffff:box=1:boxcolor=000000@0.8:boxborderw=1"')" >> $GITHUB_OUTPUT
           echo "caption_position=$(echo "$CAPTION_CONFIG" | jq -r '.position // "bottom_center"')" >> $GITHUB_OUTPUT
+          echo "caption_word_duration=$(echo "$CAPTION_CONFIG" | jq -r '.word_duration // "0.6"')" >> $GITHUB_OUTPUT
+          echo "caption_animation=$(echo "$CAPTION_CONFIG" | jq -r '.animation // "word_by_word"')" >> $GITHUB_OUTPUT
 
       - name: Set up FFmpeg and tools
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg jq
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg jq bc
 
       - name: Generate audio using ElevenLabs TTS
         id: elevenlabs
@@ -408,6 +410,9 @@ jobs:
           CAPTION_TEXT="${{ steps.params.outputs.caption_text }}"
           CAPTION_STYLE="${{ steps.params.outputs.caption_style }}"
           CAPTION_POSITION="${{ steps.params.outputs.caption_position }}"
+          CAPTION_WORD_DURATION="${{ steps.params.outputs.caption_word_duration }}"
+          CAPTION_ANIMATION="${{ steps.params.outputs.caption_animation }}"
+          CAPTION_POSITION="${{ steps.params.outputs.caption_position }}"
           
           # Determine caption position coordinates
           case "$CAPTION_POSITION" in
@@ -428,10 +433,61 @@ jobs:
           
           # Add caption filter if caption text is provided
           if [ -n "$CAPTION_TEXT" ] && [ "$CAPTION_TEXT" != "" ]; then
-            echo "Adding captions to video..."
-            ESCAPED_TEXT=$(echo "$CAPTION_TEXT" | sed "s/'/'\\\\''/g; s/:/\\\\:/g; s/,/\\\\,/g")
-            VIDEO_FILTER="${VIDEO_FILTER}; [v_base]drawtext=text='${ESCAPED_TEXT}':${CAPTION_STYLE}:x=${CAPTION_X}:y=${CAPTION_Y}[v_with_text]"
-            FINAL_VIDEO="[v_with_text]"
+            
+            # Check animation type
+            if [ "$CAPTION_ANIMATION" = "word_by_word" ]; then
+              echo "Adding animated word-by-word captions to video..."
+              
+              # Split text into words
+              IFS=' ' read -ra WORDS <<< "$CAPTION_TEXT"
+              WORD_COUNT=${#WORDS[@]}
+              
+              # Use configurable word duration
+              WORD_DURATION="$CAPTION_WORD_DURATION"
+              
+              echo "Caption animation: $WORD_COUNT words, ${WORD_DURATION}s per word"
+              
+              # Start with base video
+              CURRENT_VIDEO_TAG="[v_base]"
+              CAPTION_FILTERS=""
+              
+              # Create filters for each cumulative word reveal
+              for i in "${!WORDS[@]}"; do
+                # Build cumulative text (all words up to current index)
+                CUMULATIVE_TEXT=""
+                for j in $(seq 0 $i); do
+                  if [ $j -eq 0 ]; then
+                    CUMULATIVE_TEXT="${WORDS[$j]}"
+                  else
+                    CUMULATIVE_TEXT="${CUMULATIVE_TEXT} ${WORDS[$j]}"
+                  fi
+                done
+                
+                # Escape special characters for FFmpeg
+                ESCAPED_TEXT=$(echo "$CUMULATIVE_TEXT" | sed "s/'/'\\\\''/g; s/:/\\\\:/g; s/,/\\\\,/g")
+                
+                # Calculate start time for this word
+                START_TIME=$(echo "$i * $WORD_DURATION" | bc -l)
+                
+                # Create the drawtext filter with enable condition
+                NEXT_VIDEO_TAG="[caption_step_${i}]"
+                CAPTION_FILTERS="${CAPTION_FILTERS}; ${CURRENT_VIDEO_TAG}drawtext=text='${ESCAPED_TEXT}':${CAPTION_STYLE}:x=${CAPTION_X}:y=${CAPTION_Y}:enable='gte(t,${START_TIME})'${NEXT_VIDEO_TAG}"
+                
+                CURRENT_VIDEO_TAG="${NEXT_VIDEO_TAG}"
+              done
+              
+              # Add all caption filters to the main video filter
+              VIDEO_FILTER="${VIDEO_FILTER}${CAPTION_FILTERS}"
+              FINAL_VIDEO="${CURRENT_VIDEO_TAG}"
+              
+              echo "Created word-by-word caption animation with $WORD_COUNT steps"
+            else
+              echo "Adding static captions to video..."
+              # Original static caption behavior
+              ESCAPED_TEXT=$(echo "$CAPTION_TEXT" | sed "s/'/'\\\\''/g; s/:/\\\\:/g; s/,/\\\\,/g")
+              VIDEO_FILTER="${VIDEO_FILTER}; [v_base]drawtext=text='${ESCAPED_TEXT}':${CAPTION_STYLE}:x=${CAPTION_X}:y=${CAPTION_Y}[v_with_text]"
+              FINAL_VIDEO="[v_with_text]"
+            fi
           else
             FINAL_VIDEO="[v_base]"
           fi
