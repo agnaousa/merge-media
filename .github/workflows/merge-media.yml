@@ -37,9 +37,9 @@ on:
         required: false
         default: "{\"path\":\"\", \"base64\":\"\", \"volume\":\"0.3\"}"
       caption_config:
-        description: "Caption config JSON: {\"text\":\"\", \"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:line_spacing=4\", \"position\":\"bottom_center\"}"
+        description: "Caption config JSON: {\"text\":\"\", \"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5\", \"position\":\"bottom_center\"}"
         required: false
-        default: "{\"text\":\"\", \"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:line_spacing=4\", \"position\":\"bottom_center\"}"
+        default: "{\"text\":\"\", \"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5\", \"position\":\"bottom_center\"}"
       elevenlabs_config:
         description: "ElevenLabs TTS config JSON: {\"text\":\"\", \"voice_id\":\"BtWabtumIemAotTjP5sk\", \"model\":\"eleven_flash_v2_5\", \"api_key\":\"\"}"
         required: false
@@ -78,7 +78,7 @@ jobs:
           # Parse caption config JSON
           CAPTION_CONFIG='${{ github.event.inputs.caption_config }}'
           echo "caption_text=$(echo "$CAPTION_CONFIG" | jq -r '.text // ""')" >> $GITHUB_OUTPUT
-          echo "caption_style=$(echo "$CAPTION_CONFIG" | jq -r '.style // "fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:line_spacing=4"')" >> $GITHUB_OUTPUT
+          echo "caption_style=$(echo "$CAPTION_CONFIG" | jq -r '.style // "fontsize=40:fontcolor=ffffff:box=1:boxcolor=000000@0.8:boxborderw=1"')" >> $GITHUB_OUTPUT
           echo "caption_position=$(echo "$CAPTION_CONFIG" | jq -r '.position // "bottom_center"')" >> $GITHUB_OUTPUT
 
       - name: Set up FFmpeg and tools
@@ -428,34 +428,10 @@ jobs:
           
           # Add caption filter if caption text is provided
           if [ -n "$CAPTION_TEXT" ] && [ "$CAPTION_TEXT" != "" ]; then
-            echo "Adding captions to video with text wrapping..."
-            
-            # Get video dimensions for text wrapping calculations
-            VIDEO_WIDTH=$(ffprobe -v quiet -select_streams v:0 -show_entries stream=width -of csv=p=0 "${{ steps.download.outputs.local_video_path }}")
-            VIDEO_HEIGHT=$(ffprobe -v quiet -select_streams v:0 -show_entries stream=height -of csv=p=0 "${{ steps.download.outputs.local_video_path }}")
-            
-            echo "Video dimensions: ${VIDEO_WIDTH}x${VIDEO_HEIGHT}"
-            
-            # Calculate character limit based on video width and font size
-            # Rough estimation: for fontsize 24, approximately 45-50 chars per line for 1080p width
-            CHARS_PER_LINE=$((VIDEO_WIDTH / 25))  # Approximate character width estimation
-            MAX_CHARS_PER_LINE=$((CHARS_PER_LINE * 80 / 100))  # 80% of video width
-            
-            echo "Estimated max characters per line: ${MAX_CHARS_PER_LINE}"
-            
-            # Wrap text manually using fold command with word boundaries
-            WRAPPED_TEXT=$(echo "$CAPTION_TEXT" | fold -s -w "$MAX_CHARS_PER_LINE" | tr '\n' '\|')
-            # Replace | with actual newline characters for FFmpeg
-            WRAPPED_TEXT=$(echo "$WRAPPED_TEXT" | sed 's/|/\\n/g' | sed 's/\\n$//')
-            
-            # Escape text for FFmpeg with proper handling
-            ESCAPED_TEXT=$(echo "$WRAPPED_TEXT" | sed "s/'/'\\\\''/g; s/:/\\\\:/g; s/,/\\\\,/g")
-            
+            echo "Adding captions to video..."
+            ESCAPED_TEXT=$(echo "$CAPTION_TEXT" | sed "s/'/'\\\\''/g; s/:/\\\\:/g; s/,/\\\\,/g")
             VIDEO_FILTER="${VIDEO_FILTER}; [v_base]drawtext=text='${ESCAPED_TEXT}':${CAPTION_STYLE}:x=${CAPTION_X}:y=${CAPTION_Y}[v_with_text]"
             FINAL_VIDEO="[v_with_text]"
-            
-            echo "Text wrapping enabled with max chars per line: ${MAX_CHARS_PER_LINE}"
-            echo "Wrapped text: ${WRAPPED_TEXT}"
           else
             FINAL_VIDEO="[v_base]"
           fi
