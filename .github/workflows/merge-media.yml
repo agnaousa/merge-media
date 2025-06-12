@@ -436,20 +436,26 @@ jobs:
             
             echo "Video dimensions: ${VIDEO_WIDTH}x${VIDEO_HEIGHT}"
             
-            # Calculate maximum text width (80% of video width with margins)
-            MAX_TEXT_WIDTH=$((VIDEO_WIDTH * 80 / 100))
+            # Calculate character limit based on video width and font size
+            # Rough estimation: for fontsize 24, approximately 45-50 chars per line for 1080p width
+            CHARS_PER_LINE=$((VIDEO_WIDTH / 25))  # Approximate character width estimation
+            MAX_CHARS_PER_LINE=$((CHARS_PER_LINE * 80 / 100))  # 80% of video width
+            
+            echo "Estimated max characters per line: ${MAX_CHARS_PER_LINE}"
+            
+            # Wrap text manually using fold command with word boundaries
+            WRAPPED_TEXT=$(echo "$CAPTION_TEXT" | fold -s -w "$MAX_CHARS_PER_LINE" | tr '\n' '\|')
+            # Replace | with actual newline characters for FFmpeg
+            WRAPPED_TEXT=$(echo "$WRAPPED_TEXT" | sed 's/|/\\n/g' | sed 's/\\n$//')
             
             # Escape text for FFmpeg with proper handling
-            ESCAPED_TEXT=$(echo "$CAPTION_TEXT" | sed "s/'/'\\\\''/g; s/:/\\\\:/g; s/,/\\\\,/g")
+            ESCAPED_TEXT=$(echo "$WRAPPED_TEXT" | sed "s/'/'\\\\''/g; s/:/\\\\:/g; s/,/\\\\,/g")
             
-            # Add text wrapping to the caption style
-            # textw parameter calculates text width and automatically wraps
-            WRAPPED_CAPTION_STYLE="${CAPTION_STYLE}:textw=${MAX_TEXT_WIDTH}"
-            
-            VIDEO_FILTER="${VIDEO_FILTER}; [v_base]drawtext=text='${ESCAPED_TEXT}':${WRAPPED_CAPTION_STYLE}:x=${CAPTION_X}:y=${CAPTION_Y}[v_with_text]"
+            VIDEO_FILTER="${VIDEO_FILTER}; [v_base]drawtext=text='${ESCAPED_TEXT}':${CAPTION_STYLE}:x=${CAPTION_X}:y=${CAPTION_Y}[v_with_text]"
             FINAL_VIDEO="[v_with_text]"
             
-            echo "Text wrapping enabled with max width: ${MAX_TEXT_WIDTH}px"
+            echo "Text wrapping enabled with max chars per line: ${MAX_CHARS_PER_LINE}"
+            echo "Wrapped text: ${WRAPPED_TEXT}"
           else
             FINAL_VIDEO="[v_base]"
           fi
