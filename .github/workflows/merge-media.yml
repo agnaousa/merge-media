@@ -467,14 +467,25 @@ jobs:
           # Add caption filter if caption text is provided
           if [ -n "$CAPTION_TEXT" ] && [ "$CAPTION_TEXT" != "" ]; then
             echo "Adding captions to video with padding protection..."
-            ESCAPED_TEXT=$(echo "$CAPTION_TEXT" | sed "s/'/'\\\\''/g; s/:/\\\\:/g; s/,/\\\\,/g")
             
-            # Use the original caption style without unsupported parameters
-            VIDEO_FILTER="${VIDEO_FILTER}; [v_base]drawtext=text='${ESCAPED_TEXT}':${CAPTION_STYLE}:x=${CAPTION_X}:y=${CAPTION_Y}[v_with_text]"
+            # Split long text into multiple lines to prevent overflow
+            # Calculate approximate characters per line based on video width
+            # Assuming average character width of ~12px at fontsize=24
+            CHARS_PER_LINE=$(( (1920 - 2 * PADDING_X) / 12 ))
+            
+            # Use fold command to wrap text at word boundaries
+            WRAPPED_TEXT=$(echo "$CAPTION_TEXT" | fold -w $CHARS_PER_LINE -s)
+            
+            # Escape the text for FFmpeg
+            ESCAPED_TEXT=$(echo "$WRAPPED_TEXT" | sed "s/'/'\\\\''/g; s/:/\\\\:/g; s/,/\\\\,/g")
+            
+            # Use original caption style but with forced positioning
+            VIDEO_FILTER="${VIDEO_FILTER}; [v_base]drawtext=text='${ESCAPED_TEXT}':${CAPTION_STYLE}:x=${PADDING_X}:y=${CAPTION_Y}[v_with_text]"
             FINAL_VIDEO="[v_with_text]"
             
-            echo "Caption positioning: X=${CAPTION_X}, Y=${CAPTION_Y}"
-            echo "Caption style: ${CAPTION_STYLE}"
+            echo "Caption positioning: X=${PADDING_X}, Y=${CAPTION_Y}"
+            echo "Text wrapped to max ${CHARS_PER_LINE} characters per line"
+            echo "Wrapped text preview: $(echo "$WRAPPED_TEXT" | head -n 1)..."
           else
             FINAL_VIDEO="[v_base]"
           fi
