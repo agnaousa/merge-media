@@ -416,13 +416,14 @@ jobs:
           echo "Using caption padding: X=${PADDING_X}px, Y=${PADDING_Y}px"
           
           # Determine caption position coordinates with proper padding
+          # Using simple expressions that FFmpeg can handle
           case "$CAPTION_POSITION" in
             "top_left") 
               CAPTION_X="$PADDING_X"
               CAPTION_Y="$PADDING_Y" 
               ;;
             "top_center") 
-              CAPTION_X="max($PADDING_X, min(w-text_w-$PADDING_X, (w-text_w)/2))"
+              CAPTION_X="(w-text_w)/2"
               CAPTION_Y="$PADDING_Y" 
               ;;
             "top_right") 
@@ -431,22 +432,22 @@ jobs:
               ;;
             "center_left") 
               CAPTION_X="$PADDING_X"
-              CAPTION_Y="max($PADDING_Y, min(h-text_h-$PADDING_Y, (h-text_h)/2))" 
+              CAPTION_Y="(h-text_h)/2" 
               ;;
             "center") 
-              CAPTION_X="max($PADDING_X, min(w-text_w-$PADDING_X, (w-text_w)/2))"
-              CAPTION_Y="max($PADDING_Y, min(h-text_h-$PADDING_Y, (h-text_h)/2))" 
+              CAPTION_X="(w-text_w)/2"
+              CAPTION_Y="(h-text_h)/2" 
               ;;
             "center_right") 
               CAPTION_X="w-text_w-$PADDING_X"
-              CAPTION_Y="max($PADDING_Y, min(h-text_h-$PADDING_Y, (h-text_h)/2))" 
+              CAPTION_Y="(h-text_h)/2" 
               ;;
             "bottom_left") 
               CAPTION_X="$PADDING_X"
               CAPTION_Y="h-text_h-$PADDING_Y" 
               ;;
             "bottom_center") 
-              CAPTION_X="max($PADDING_X, min(w-text_w-$PADDING_X, (w-text_w)/2))"
+              CAPTION_X="(w-text_w)/2"
               CAPTION_Y="h-text_h-$PADDING_Y" 
               ;;
             "bottom_right") 
@@ -455,7 +456,7 @@ jobs:
               ;;
             *) 
               # default to bottom_center with padding
-              CAPTION_X="max($PADDING_X, min(w-text_w-$PADDING_X, (w-text_w)/2))"
+              CAPTION_X="(w-text_w)/2"
               CAPTION_Y="h-text_h-$PADDING_Y" 
               ;;
           esac
@@ -468,17 +469,12 @@ jobs:
             echo "Adding captions to video with padding protection..."
             ESCAPED_TEXT=$(echo "$CAPTION_TEXT" | sed "s/'/'\\\\''/g; s/:/\\\\:/g; s/,/\\\\,/g")
             
-            # Calculate maximum text width based on video width and padding
-            MAX_TEXT_WIDTH="w-2*$PADDING_X"
-            
-            # Enhanced caption style with text wrapping and padding protection
-            ENHANCED_CAPTION_STYLE="${CAPTION_STYLE}:text_w=${MAX_TEXT_WIDTH}"
-            
-            VIDEO_FILTER="${VIDEO_FILTER}; [v_base]drawtext=text='${ESCAPED_TEXT}':${ENHANCED_CAPTION_STYLE}:x=${CAPTION_X}:y=${CAPTION_Y}[v_with_text]"
+            # Use the original caption style without unsupported parameters
+            VIDEO_FILTER="${VIDEO_FILTER}; [v_base]drawtext=text='${ESCAPED_TEXT}':${CAPTION_STYLE}:x=${CAPTION_X}:y=${CAPTION_Y}[v_with_text]"
             FINAL_VIDEO="[v_with_text]"
             
             echo "Caption positioning: X=${CAPTION_X}, Y=${CAPTION_Y}"
-            echo "Maximum text width: ${MAX_TEXT_WIDTH}"
+            echo "Caption style: ${CAPTION_STYLE}"
           else
             FINAL_VIDEO="[v_base]"
           fi
