@@ -51,10 +51,7 @@ This workflow can:
   "ref": "main",
   "inputs": {
     "video_path": "https://your-video-url.com/video.mp4",
-    "elevenlabs_tts_text": "Welcome to our comprehensive tutorial on artificial intelligence and machine learning.",
-    "elevenlabs_voice_id": "BtWabtumIemAotTjP5sk",
-    "elevenlabs_model": "eleven_flash_v2_5",
-    "elevenlabs_api_key": "sk_your_elevenlabs_api_key_here",
+    "elevenlabs_config": "{\"text\":\"Welcome to our comprehensive tutorial on artificial intelligence and machine learning.\",\"voice_id\":\"BtWabtumIemAotTjP5sk\",\"model\":\"eleven_flash_v2_5\",\"api_key\":\"sk_your_elevenlabs_api_key_here\"}",
     "output_path": "output/ai_tutorial.mp4",
     "audio_handling": "replace"
   }
@@ -67,10 +64,7 @@ This workflow can:
   "ref": "main",
   "inputs": {
     "video_path": "https://your-video-url.com/video.mp4",
-    "elevenlabs_tts_text": "Discover the future of technology with our innovative AI solutions that will transform your business.",
-    "elevenlabs_voice_id": "BtWabtumIemAotTjP5sk",
-    "elevenlabs_model": "eleven_flash_v2_5",
-    "elevenlabs_api_key": "sk_your_elevenlabs_api_key_here",
+    "elevenlabs_config": "{\"text\":\"Discover the future of technology with our innovative AI solutions that will transform your business.\",\"voice_id\":\"BtWabtumIemAotTjP5sk\",\"model\":\"eleven_flash_v2_5\",\"api_key\":\"sk_your_elevenlabs_api_key_here\"}",
     "background_sound_config": "{\"path\":\"https://your-music-url.com/ambient.mp3\",\"base64\":\"\",\"volume\":\"0.15\"}",
     "caption_config": "{\"text\":\"AI Innovation 2025\",\"style\":\"fontsize=32:fontcolor=ffffff:box=1:boxcolor=000000@0.8:boxborderw=2\",\"position\":\"top_center\"}",
     "output_path": "output/ai_promo.mp4",
@@ -116,10 +110,7 @@ Headers:
   "ref": "main",
   "inputs": {
     "video_path": "{{video_url_or_path}}",
-    "elevenlabs_tts_text": "{{tts_text_content}}",
-    "elevenlabs_voice_id": "{{voice_id_or_default}}",
-    "elevenlabs_model": "{{model_or_default}}",
-    "elevenlabs_api_key": "{{elevenlabs_api_key}}",
+    "elevenlabs_config": "{\"text\":\"{{tts_text_content}}\",\"voice_id\":\"{{voice_id_or_default}}\",\"model\":\"{{model_or_default}}\",\"api_key\":\"{{elevenlabs_api_key}}\"}",
     "audio_path": "{{fallback_audio_url}}",
     "audio_base64": "{{base64_audio_data}}",
     "background_sound_config": "{\"path\":\"{{background_music_url}}\",\"base64\":\"{{base64_background_data}}\",\"volume\":\"{{background_volume_level}}\"}",
@@ -132,11 +123,16 @@ Headers:
 
 ## 🎯 Complete Input Parameters
 
-### **🤖 ElevenLabs TTS Parameters (NEW)**
-- `elevenlabs_tts_text`: Text to convert to speech (**takes priority over other audio**)
-- `elevenlabs_voice_id`: Voice ID (default: `BtWabtumIemAotTjP5sk`)
-- `elevenlabs_model`: AI model (default: `eleven_flash_v2_5`)
-- `elevenlabs_api_key`: Your ElevenLabs API key (**required for TTS**)
+### **🤖 ElevenLabs TTS Configuration (NEW)**
+- `elevenlabs_config`: JSON string containing all TTS parameters:
+  ```json
+  {
+    "text": "Text to convert to speech (takes priority over other audio)",
+    "voice_id": "BtWabtumIemAotTjP5sk",
+    "model": "eleven_flash_v2_5",
+    "api_key": "sk_your_elevenlabs_api_key_here"
+  }
+  ```
 
 ### **📹 Core Parameters**
 - `video_path`: URL to video file or local path (**required**)
@@ -188,10 +184,7 @@ Slack: Send download link when complete
   "ref": "main",
   "inputs": {
     "video_path": "{{bundle.inputData.videoTemplate}}",
-    "elevenlabs_tts_text": "{{openai_generated_script}}",
-    "elevenlabs_voice_id": "BtWabtumIemAotTjP5sk",
-    "elevenlabs_model": "eleven_flash_v2_5", 
-    "elevenlabs_api_key": "{{connection.elevenlabs_key}}",
+    "elevenlabs_config": "{\"text\":\"{{openai_generated_script}}\",\"voice_id\":\"BtWabtumIemAotTjP5sk\",\"model\":\"eleven_flash_v2_5\",\"api_key\":\"{{connection.elevenlabs_key}}\"}",
     "background_sound_config": "{\"path\":\"{{bundle.inputData.backgroundMusic}}\",\"volume\":\"0.2\"}",
     "caption_config": "{\"text\":\"{{bundle.inputData.title}}\",\"style\":\"fontsize=28:fontcolor=white:box=1:boxcolor=black@0.8\",\"position\":\"top_center\"}",
     "output_path": "output/ai_content_{{formatDate(now; 'YYYYMMDD_HHmmss')}}.mp4",
@@ -218,8 +211,7 @@ Email: Notify content team
 **Dynamic Voice Selection:**
 ```json
 {
-  "elevenlabs_voice_id": "{{if(bundle.inputData.language = 'en'; 'BtWabtumIemAotTjP5sk'; if(bundle.inputData.language = 'es'; 'spanish_voice_id'; 'default_voice_id'))}}",
-  "elevenlabs_tts_text": "{{translated_text}}"
+  "elevenlabs_config": "{\"text\":\"{{translated_text}}\",\"voice_id\":\"{{if(bundle.inputData.language = 'en'; 'BtWabtumIemAotTjP5sk'; if(bundle.inputData.language = 'es'; 'spanish_voice_id'; 'default_voice_id'))}}\",\"model\":\"eleven_flash_v2_5\",\"api_key\":\"{{connection.elevenlabs_key}}\"}"
 }
 ```
 
@@ -246,9 +238,7 @@ Airtable: Update record with video link
   "ref": "main",
   "inputs": {
     "video_path": "{{bundle.lesson.template_video_url}}",
-    "elevenlabs_tts_text": "{{bundle.lesson.full_script}}",
-    "elevenlabs_voice_id": "{{bundle.lesson.instructor_voice_id}}",
-    "elevenlabs_api_key": "{{connection.elevenlabs_key}}",
+    "elevenlabs_config": "{\"text\":\"{{bundle.lesson.full_script}}\",\"voice_id\":\"{{bundle.lesson.instructor_voice_id}}\",\"model\":\"eleven_flash_v2_5\",\"api_key\":\"{{connection.elevenlabs_key}}\"}",
     "background_sound_config": "{\"path\":\"{{bundle.lesson.background_music}}\",\"volume\":\"0.15\"}",
     "caption_config": "{\"text\":\"{{bundle.lesson.title}} - {{bundle.lesson.chapter}}\",\"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=blue@0.8\",\"position\":\"bottom_center\"}",
     "output_path": "output/lesson_{{bundle.lesson.id}}_{{formatDate(now; 'YYYYMMDD')}}.mp4",

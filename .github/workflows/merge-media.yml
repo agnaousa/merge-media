@@ -40,22 +40,10 @@ on:
         description: "Caption config JSON: {\"text\":\"\", \"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5\", \"position\":\"bottom_center\"}"
         required: false
         default: "{\"text\":\"\", \"style\":\"fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5\", \"position\":\"bottom_center\"}"
-      elevenlabs_tts_text:
-        description: "Text to convert to speech using ElevenLabs TTS (if provided, takes priority over audio files)"
+      elevenlabs_config:
+        description: "ElevenLabs TTS config JSON: {\"text\":\"\", \"voice_id\":\"BtWabtumIemAotTjP5sk\", \"model\":\"eleven_flash_v2_5\", \"api_key\":\"\"}"
         required: false
-        default: ""
-      elevenlabs_voice_id:
-        description: "ElevenLabs voice ID"
-        required: false
-        default: "BtWabtumIemAotTjP5sk"
-      elevenlabs_model:
-        description: "ElevenLabs model to use"
-        required: false
-        default: "eleven_flash_v2_5"
-      elevenlabs_api_key:
-        description: "ElevenLabs API key"
-        required: false
-        default: ""
+        default: "{\"text\":\"\", \"voice_id\":\"BtWabtumIemAotTjP5sk\", \"model\":\"eleven_flash_v2_5\", \"api_key\":\"\"}"
 
 
 jobs:
@@ -73,10 +61,13 @@ jobs:
           echo "audio_base64=${{ github.event.inputs.audio_base64 }}" >> $GITHUB_OUTPUT
           echo "output_path=${{ github.event.inputs.output_path }}" >> $GITHUB_OUTPUT
           echo "audio_handling=${{ github.event.inputs.audio_handling }}" >> $GITHUB_OUTPUT
-          echo "elevenlabs_tts_text=${{ github.event.inputs.elevenlabs_tts_text }}" >> $GITHUB_OUTPUT
-          echo "elevenlabs_voice_id=${{ github.event.inputs.elevenlabs_voice_id }}" >> $GITHUB_OUTPUT
-          echo "elevenlabs_model=${{ github.event.inputs.elevenlabs_model }}" >> $GITHUB_OUTPUT
-          echo "elevenlabs_api_key=${{ github.event.inputs.elevenlabs_api_key }}" >> $GITHUB_OUTPUT
+          
+          # Parse ElevenLabs config JSON
+          ELEVENLABS_CONFIG='${{ github.event.inputs.elevenlabs_config }}'
+          echo "elevenlabs_tts_text=$(echo "$ELEVENLABS_CONFIG" | jq -r '.text // ""')" >> $GITHUB_OUTPUT
+          echo "elevenlabs_voice_id=$(echo "$ELEVENLABS_CONFIG" | jq -r '.voice_id // "BtWabtumIemAotTjP5sk"')" >> $GITHUB_OUTPUT
+          echo "elevenlabs_model=$(echo "$ELEVENLABS_CONFIG" | jq -r '.model // "eleven_flash_v2_5"')" >> $GITHUB_OUTPUT
+          echo "elevenlabs_api_key=$(echo "$ELEVENLABS_CONFIG" | jq -r '.api_key // ""')" >> $GITHUB_OUTPUT
           
           # Parse background sound config JSON
           BACKGROUND_CONFIG='${{ github.event.inputs.background_sound_config }}'

@@ -1,6 +1,23 @@
 # Merge Media Workflow
 
-A GitHub Actions workflow for merging audio and video files with support for background sound, captions, and AI-generated speech.
+A GitHub Actions workflow for merging audio and video files with support### 🤖 AI-Generated Speech (TTS)
+- Video:### Full Featured Example with TTS
+- Video: `https://example.com/video.mp4`
+- ElevenLabs Config: `{"text":"Discover the future of technology with our innovative solutions!", "voice_id":"BtWabtumIemAotTjP5sk", "model":"eleven_flash_v2_5", "api_key":"sk_your_elevenlabs_api_key_here"}`
+- Background Sound: `https://example.com/background.mp3`
+- Background Volume: `0.25`
+- Caption Text: `Learn something new today!`
+- Caption Position: `top_center`
+- Audio Handling: `replace`eo.mp4`
+- ElevenLabs Config: `{"text":"Welcome to our comprehensive tutorial on artificial intelligence!", "voice_id":"BtWabtumIemAotTjP5sk", "model":"eleven_flash_v2_5", "api_key":"sk_your_elevenlabs_api_key_here"}`
+- Audio Handling: `replace`
+
+### TTS + Background Music
+- Video: `input/video.mp4`
+- ElevenLabs Config: `{"text":"Learn about machine learning in this exciting video series.", "voice_id":"BtWabtumIemAotTjP5sk", "api_key":"sk_your_elevenlabs_api_key_here"}`
+- Background Sound: `input/ambient-music.mp3`
+- Background Volume: `0.15`
+- Audio Handling: `replace`sound, captions, and AI-generated speech.
 
 ## Features
 
@@ -30,10 +47,21 @@ A GitHub Actions workflow for merging audio and video files with support for bac
 
 Generate high-quality speech from text using ElevenLabs AI:
 
-- **TTS Text**: Text to convert to speech (takes priority over audio files when provided)
-- **Voice ID**: ElevenLabs voice ID (default: `BtWabtumIemAotTjP5sk`)
-- **Model**: AI model to use (default: `eleven_flash_v2_5`)
-- **API Key**: Your ElevenLabs API key (**required** when using TTS)
+- **ElevenLabs Config**: JSON configuration containing all TTS parameters:
+  ```json
+  {
+    "text": "Text to convert to speech",
+    "voice_id": "BtWabtumIemAotTjP5sk",
+    "model": "eleven_flash_v2_5", 
+    "api_key": "sk_your_elevenlabs_api_key_here"
+  }
+  ```
+
+**Configuration Parameters:**
+- `text`: Text to convert to speech (takes priority over audio files when provided)
+- `voice_id`: ElevenLabs voice ID (default: `BtWabtumIemAotTjP5sk`)
+- `model`: AI model to use (default: `eleven_flash_v2_5`)
+- `api_key`: Your ElevenLabs API key (**required** when using TTS)
 
 **Audio Priority Order:**
 1. **TTS-generated audio** (highest priority)
