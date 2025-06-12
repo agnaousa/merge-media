@@ -17,15 +17,11 @@ class CaptionStyleGenerator {
         this.boxColorText = document.getElementById('box-color-text');
         this.boxOpacity = document.getElementById('box-opacity');
         this.boxBorder = document.getElementById('box-border');
-        this.boxWidth = document.getElementById('box-width');
-        this.boxPadding = document.getElementById('box-padding');
 
         // Display elements
         this.fontSizeValue = document.getElementById('font-size-value');
         this.boxOpacityValue = document.getElementById('box-opacity-value');
         this.boxBorderValue = document.getElementById('box-border-value');
-        this.boxWidthValue = document.getElementById('box-width-value');
-        this.boxPaddingValue = document.getElementById('box-padding-value');
         this.captionPreview = document.getElementById('caption-preview');
         this.styleOutput = document.getElementById('style-output');
         this.jsonOutput = document.getElementById('json-output');
@@ -56,8 +52,6 @@ class CaptionStyleGenerator {
         this.boxColorText.addEventListener('input', () => this.updateColorFromText('box-color'));
         this.boxOpacity.addEventListener('input', () => this.updateRangeValue('box-opacity'));
         this.boxBorder.addEventListener('input', () => this.updateRangeValue('box-border'));
-        this.boxWidth.addEventListener('input', () => this.updateRangeValue('box-width'));
-        this.boxPadding.addEventListener('input', () => this.updateRangeValue('box-padding'));
 
         // Position events
         this.positionOptions.forEach(option => {
@@ -116,8 +110,6 @@ class CaptionStyleGenerator {
                 boxColor: '#FFFFFF',
                 boxOpacity: 0.9,
                 boxBorder: 2,
-                boxWidth: 300,
-                boxPadding: 15,
                 position: 'bottom_center'
             },
             gaming: {
@@ -127,8 +119,6 @@ class CaptionStyleGenerator {
                 boxColor: '#FF0000',
                 boxOpacity: 0.7,
                 boxBorder: 3,
-                boxWidth: 400,
-                boxPadding: 20,
                 position: 'center'
             },
             elegant: {
@@ -138,8 +128,6 @@ class CaptionStyleGenerator {
                 boxColor: '#000000',
                 boxOpacity: 0.3,
                 boxBorder: 1,
-                boxWidth: 250,
-                boxPadding: 12,
                 position: 'bottom_right'
             },
             bold: {
@@ -149,8 +137,6 @@ class CaptionStyleGenerator {
                 boxColor: '#000000',
                 boxOpacity: 0.8,
                 boxBorder: 4,
-                boxWidth: 500,
-                boxPadding: 25,
                 position: 'top_center'
             },
             minimal: {
@@ -160,8 +146,6 @@ class CaptionStyleGenerator {
                 boxColor: '#000000',
                 boxOpacity: 0.0,
                 boxBorder: 0,
-                boxWidth: 0,
-                boxPadding: 0,
                 position: 'bottom_center'
             }
         };
@@ -179,10 +163,6 @@ class CaptionStyleGenerator {
             this.boxOpacityValue.textContent = config.boxOpacity;
             this.boxBorder.value = config.boxBorder;
             this.boxBorderValue.textContent = config.boxBorder;
-            this.boxWidth.value = config.boxWidth;
-            this.boxWidthValue.textContent = config.boxWidth;
-            this.boxPadding.value = config.boxPadding;
-            this.boxPaddingValue.textContent = config.boxPadding;
 
             // Update position
             this.positionOptions.forEach(opt => opt.classList.remove('active'));
@@ -228,8 +208,6 @@ class CaptionStyleGenerator {
         const boxColor = this.boxColor.value;
         const boxOpacity = parseFloat(this.boxOpacity.value);
         const boxBorder = parseInt(this.boxBorder.value);
-        const boxWidth = parseInt(this.boxWidth.value);
-        const boxPadding = parseInt(this.boxPadding.value);
         const position = this.getPositionStyles(this.currentPosition);
 
         // Update preview
@@ -250,17 +228,8 @@ class CaptionStyleGenerator {
         if (enableBox) {
             const rgb = this.hexToRgb(boxColor);
             this.captionPreview.style.backgroundColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${boxOpacity})`;
-            this.captionPreview.style.padding = `${Math.max(boxPadding * 0.3, 4)}px ${Math.max(boxPadding * 0.6, 8)}px`;
+            this.captionPreview.style.padding = '8px 16px';
             this.captionPreview.style.borderRadius = '4px';
-            
-            // Apply box width if specified
-            if (boxWidth > 0) {
-                this.captionPreview.style.width = `${Math.min(boxWidth * 0.3, 300)}px`;
-                this.captionPreview.style.maxWidth = `${Math.min(boxWidth * 0.3, 300)}px`;
-            } else {
-                this.captionPreview.style.width = 'auto';
-                this.captionPreview.style.maxWidth = 'none';
-            }
             
             // Add border effect in preview
             if (boxBorder > 0) {
@@ -291,22 +260,14 @@ class CaptionStyleGenerator {
         const boxColor = this.boxColor.value.replace('#', '');
         const boxOpacity = parseFloat(this.boxOpacity.value);
         const boxBorder = parseInt(this.boxBorder.value);
-        const boxWidth = parseInt(this.boxWidth.value);
-        const boxPadding = parseInt(this.boxPadding.value);
 
-        // Build FFmpeg style string
+        // Build FFmpeg style string (only using supported parameters)
         let style = `fontsize=${fontSize}:fontcolor=${fontColor}`;
         
         if (enableBox) {
             style += `:box=1:boxcolor=${boxColor}@${boxOpacity}`;
             if (boxBorder > 0) {
                 style += `:boxborderw=${boxBorder}`;
-            }
-            if (boxWidth > 0) {
-                style += `:boxw=${boxWidth}`;
-            }
-            if (boxPadding > 0) {
-                style += `:boxpadding=${boxPadding}`;
             }
         }
 
