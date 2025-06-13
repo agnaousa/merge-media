@@ -460,7 +460,7 @@ jobs:
           esac
           
           # Update caption style with selected font
-          CAPTION_STYLE="fontfile=${FONT_FILE}:fontsize=${CAPTION_FONTSIZE}:fontcolor=${CAPTION_FONTCOLOR}"
+          CAPTION_STYLE="fontfile=${FONT_FILE}:size=${CAPTION_FONTSIZE}:fontcolor=${CAPTION_FONTCOLOR}"
           
           # Add box styling if enabled
           if [ "$CAPTION_BOX" = "1" ]; then
@@ -468,7 +468,19 @@ jobs:
           fi
           
           echo "Caption font: $CAPTION_FONT (${FONT_FILE})"
+          echo "Caption fontsize: $CAPTION_FONTSIZE"
           echo "Caption style: $CAPTION_STYLE"
+          
+          # Validate fontsize is numeric
+          if ! [[ "$CAPTION_FONTSIZE" =~ ^[0-9]+$ ]]; then
+            echo "Warning: fontsize '$CAPTION_FONTSIZE' is not numeric, using default 24"
+            CAPTION_FONTSIZE="24"
+            # Update caption style with corrected fontsize
+            CAPTION_STYLE="fontfile=${FONT_FILE}:size=${CAPTION_FONTSIZE}:fontcolor=${CAPTION_FONTCOLOR}"
+            if [ "$CAPTION_BOX" = "1" ]; then
+              CAPTION_STYLE="${CAPTION_STYLE}:box=1:boxcolor=${CAPTION_BOXCOLOR}:boxborderw=${CAPTION_BOXBORDERW}"
+            fi
+          fi
           
           # Determine caption position coordinates
           case "$CAPTION_POSITION" in
@@ -616,6 +628,14 @@ jobs:
           
           echo "Executing FFmpeg with complex filter..."
           echo "Filter: $COMPLETE_FILTER"
+          
+          echo "Final FFmpeg command debug:"
+          echo "INPUTS: $INPUTS"
+          echo "COMPLETE_FILTER: $COMPLETE_FILTER"
+          echo "FINAL_VIDEO: $FINAL_VIDEO"
+          echo "AUDIO_DURATION: $AUDIO_DURATION"
+          echo ""
+          echo "Executing FFmpeg..."
           
           eval "ffmpeg -y $INPUTS -filter_complex \"$COMPLETE_FILTER\" -map \"$FINAL_VIDEO\" -map \"[a]\" -c:v libx264 -c:a aac -t $AUDIO_DURATION \"${{ steps.output.outputs.unique_output }}\""
           
