@@ -37,9 +37,9 @@ on:
         required: false
         default: "{\"path\":\"\", \"base64\":\"\", \"volume\":\"0.3\"}"
       caption_config:
-        description: "Caption config JSON: {\"text\":\"\", \"font\":\"Arial\", \"fontsize\":\"60\", \"fontcolor\":\"white\", \"box\":\"1\", \"boxcolor\":\"black@0.5\", \"boxborderw\":\"5\", \"position\":\"bottom_center\", \"word_duration\":\"0.6\", \"animation\":\"word_by_word\"}"
+        description: "Caption config JSON: {\"text\":\"\", \"font\":\"Arial\", \"fontsize\":\"60\", \"fontcolor\":\"white\", \"box\":\"0\", \"boxcolor\":\"black@0.5\", \"boxborderw\":\"5\", \"position\":\"bottom_center\", \"word_duration\":\"0.6\", \"animation\":\"word_by_word\"}"
         required: false
-        default: "{\"text\":\"\", \"font\":\"Arial\", \"fontsize\":\"60\", \"fontcolor\":\"white\", \"box\":\"1\", \"boxcolor\":\"black@0.5\", \"boxborderw\":\"5\", \"position\":\"bottom_center\", \"word_duration\":\"0.6\", \"animation\":\"word_by_word\"}"
+        default: "{\"text\":\"\", \"font\":\"Arial\", \"fontsize\":\"60\", \"fontcolor\":\"white\", \"box\":\"0\", \"boxcolor\":\"black@0.5\", \"boxborderw\":\"5\", \"position\":\"bottom_center\", \"word_duration\":\"0.6\", \"animation\":\"word_by_word\"}"
       elevenlabs_config:
         description: "ElevenLabs TTS config JSON: {\"text\":\"\", \"voice_id\":\"BtWabtumIemAotTjP5sk\", \"model\":\"eleven_flash_v2_5\", \"api_key\":\"\"}"
         required: false
@@ -81,7 +81,7 @@ jobs:
           echo "caption_font=$(echo "$CAPTION_CONFIG" | jq -r '.font // "Arial"')" >> $GITHUB_OUTPUT
           echo "caption_fontsize=$(echo "$CAPTION_CONFIG" | jq -r '.fontsize // "60"')" >> $GITHUB_OUTPUT
           echo "caption_fontcolor=$(echo "$CAPTION_CONFIG" | jq -r '.fontcolor // "white"')" >> $GITHUB_OUTPUT
-          echo "caption_box=$(echo "$CAPTION_CONFIG" | jq -r '.box // "1"')" >> $GITHUB_OUTPUT
+          echo "caption_box=$(echo "$CAPTION_CONFIG" | jq -r '.box // "0"')" >> $GITHUB_OUTPUT
           echo "caption_boxcolor=$(echo "$CAPTION_CONFIG" | jq -r '.boxcolor // "black@0.5"')" >> $GITHUB_OUTPUT
           echo "caption_boxborderw=$(echo "$CAPTION_CONFIG" | jq -r '.boxborderw // "5"')" >> $GITHUB_OUTPUT
           echo "caption_position=$(echo "$CAPTION_CONFIG" | jq -r '.position // "bottom_center"')" >> $GITHUB_OUTPUT
@@ -464,7 +464,7 @@ jobs:
           
           # Add box styling if enabled
           if [ "$CAPTION_BOX" = "1" ]; then
-            CAPTION_STYLE="${CAPTION_STYLE}:box=1:boxcolor=${CAPTION_BOXCOLOR}:boxborderw=${CAPTION_BOXBORDERW}"
+            CAPTION_STYLE="${CAPTION_STYLE}:box=0:boxcolor=${CAPTION_BOXCOLOR}:boxborderw=${CAPTION_BOXBORDERW}"
           fi
           
           echo "Caption font: $CAPTION_FONT (${FONT_FILE})"
