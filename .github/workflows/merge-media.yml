@@ -37,9 +37,9 @@ on:
         required: false
         default: "{\"path\":\"\", \"base64\":\"\", \"volume\":\"0.3\"}"
       caption_config:
-        description: "Caption config JSON: {\"text\":\"\", \"font\":\"Arial\", \"fontsize\":\"24\", \"fontcolor\":\"white\", \"box\":\"1\", \"boxcolor\":\"black@0.5\", \"boxborderw\":\"5\", \"position\":\"bottom_center\", \"word_duration\":\"0.6\", \"animation\":\"word_by_word\"}"
+        description: "Caption config JSON: {\"text\":\"\", \"font\":\"Arial\", \"fontsize\":\"60\", \"fontcolor\":\"white\", \"box\":\"1\", \"boxcolor\":\"black@0.5\", \"boxborderw\":\"5\", \"position\":\"bottom_center\", \"word_duration\":\"0.6\", \"animation\":\"word_by_word\"}"
         required: false
-        default: "{\"text\":\"\", \"font\":\"Arial\", \"fontsize\":\"24\", \"fontcolor\":\"white\", \"box\":\"1\", \"boxcolor\":\"black@0.5\", \"boxborderw\":\"5\", \"position\":\"bottom_center\", \"word_duration\":\"0.6\", \"animation\":\"word_by_word\"}"
+        default: "{\"text\":\"\", \"font\":\"Arial\", \"fontsize\":\"60\", \"fontcolor\":\"white\", \"box\":\"1\", \"boxcolor\":\"black@0.5\", \"boxborderw\":\"5\", \"position\":\"bottom_center\", \"word_duration\":\"0.6\", \"animation\":\"word_by_word\"}"
       elevenlabs_config:
         description: "ElevenLabs TTS config JSON: {\"text\":\"\", \"voice_id\":\"BtWabtumIemAotTjP5sk\", \"model\":\"eleven_flash_v2_5\", \"api_key\":\"\"}"
         required: false
@@ -79,7 +79,7 @@ jobs:
           CAPTION_CONFIG='${{ github.event.inputs.caption_config }}'
           echo "caption_text=$(echo "$CAPTION_CONFIG" | jq -r '.text // ""')" >> $GITHUB_OUTPUT
           echo "caption_font=$(echo "$CAPTION_CONFIG" | jq -r '.font // "Arial"')" >> $GITHUB_OUTPUT
-          echo "caption_fontsize=$(echo "$CAPTION_CONFIG" | jq -r '.fontsize // "24"')" >> $GITHUB_OUTPUT
+          echo "caption_fontsize=$(echo "$CAPTION_CONFIG" | jq -r '.fontsize // "60"')" >> $GITHUB_OUTPUT
           echo "caption_fontcolor=$(echo "$CAPTION_CONFIG" | jq -r '.fontcolor // "white"')" >> $GITHUB_OUTPUT
           echo "caption_box=$(echo "$CAPTION_CONFIG" | jq -r '.box // "1"')" >> $GITHUB_OUTPUT
           echo "caption_boxcolor=$(echo "$CAPTION_CONFIG" | jq -r '.boxcolor // "black@0.5"')" >> $GITHUB_OUTPUT
@@ -468,19 +468,7 @@ jobs:
           fi
           
           echo "Caption font: $CAPTION_FONT (${FONT_FILE})"
-          echo "Caption fontsize: $CAPTION_FONTSIZE"
           echo "Caption style: $CAPTION_STYLE"
-          
-          # Validate fontsize is numeric
-          if ! [[ "$CAPTION_FONTSIZE" =~ ^[0-9]+$ ]]; then
-            echo "Warning: fontsize '$CAPTION_FONTSIZE' is not numeric, using default 24"
-            CAPTION_FONTSIZE="24"
-            # Update caption style with corrected fontsize
-            CAPTION_STYLE="fontfile=${FONT_FILE}:fontsize=${CAPTION_FONTSIZE}:fontcolor=${CAPTION_FONTCOLOR}"
-            if [ "$CAPTION_BOX" = "1" ]; then
-              CAPTION_STYLE="${CAPTION_STYLE}:box=1:boxcolor=${CAPTION_BOXCOLOR}:boxborderw=${CAPTION_BOXBORDERW}"
-            fi
-          fi
           
           # Determine caption position coordinates
           case "$CAPTION_POSITION" in
@@ -628,14 +616,6 @@ jobs:
           
           echo "Executing FFmpeg with complex filter..."
           echo "Filter: $COMPLETE_FILTER"
-          
-          echo "Final FFmpeg command debug:"
-          echo "INPUTS: $INPUTS"
-          echo "COMPLETE_FILTER: $COMPLETE_FILTER"
-          echo "FINAL_VIDEO: $FINAL_VIDEO"
-          echo "AUDIO_DURATION: $AUDIO_DURATION"
-          echo ""
-          echo "Executing FFmpeg..."
           
           eval "ffmpeg -y $INPUTS -filter_complex \"$COMPLETE_FILTER\" -map \"$FINAL_VIDEO\" -map \"[a]\" -c:v libx264 -c:a aac -t $AUDIO_DURATION \"${{ steps.output.outputs.unique_output }}\""
           
