@@ -460,7 +460,7 @@ jobs:
           esac
           
           # Update caption style with selected font
-          CAPTION_STYLE="fontfile=${FONT_FILE}:size=${CAPTION_FONTSIZE}:fontcolor=${CAPTION_FONTCOLOR}"
+          CAPTION_STYLE="fontfile=${FONT_FILE}:fontsize=${CAPTION_FONTSIZE}:fontcolor=${CAPTION_FONTCOLOR}"
           
           # Add box styling if enabled
           if [ "$CAPTION_BOX" = "1" ]; then
@@ -476,7 +476,7 @@ jobs:
             echo "Warning: fontsize '$CAPTION_FONTSIZE' is not numeric, using default 24"
             CAPTION_FONTSIZE="24"
             # Update caption style with corrected fontsize
-            CAPTION_STYLE="fontfile=${FONT_FILE}:size=${CAPTION_FONTSIZE}:fontcolor=${CAPTION_FONTCOLOR}"
+            CAPTION_STYLE="fontfile=${FONT_FILE}:fontsize=${CAPTION_FONTSIZE}:fontcolor=${CAPTION_FONTCOLOR}"
             if [ "$CAPTION_BOX" = "1" ]; then
               CAPTION_STYLE="${CAPTION_STYLE}:box=1:boxcolor=${CAPTION_BOXCOLOR}:boxborderw=${CAPTION_BOXBORDERW}"
             fi
