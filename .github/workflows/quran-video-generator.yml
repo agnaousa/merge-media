@@ -352,7 +352,7 @@ jobs:
             
             # Remove trailing comma and add reference text
             FILTER_COMPLEX="${FILTER_COMPLEX%,}[animated_text];"
-            FILTER_COMPLEX="${FILTER_COMPLEX}[animated_text]drawtext=text='${REFERENCE}':fontsize=28:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=h-text_h-100:alpha=0.7[final]"
+            FILTER_COMPLEX="${FILTER_COMPLEX}[animated_text]drawtext=text='${REFERENCE}':fontsize=40:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=h-text_h-150:box=1:boxcolor=black@0.5:boxborderw=8[final]"
             
             echo "Starting FFmpeg with animated text..."
             
@@ -401,7 +401,7 @@ jobs:
             done < temp/word_groups.txt
             
             FILTER_COMPLEX="${FILTER_COMPLEX%,}[animated_text];"
-            FILTER_COMPLEX="${FILTER_COMPLEX}[animated_text]drawtext=text='${REFERENCE}':fontsize=28:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=h-text_h-100:alpha=0.7[final]"
+            FILTER_COMPLEX="${FILTER_COMPLEX}[animated_text]drawtext=text='${REFERENCE}':fontsize=40:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=h-text_h-150:box=1:boxcolor=black@0.5:boxborderw=8[final]"
             
             ffmpeg -y \
               -f lavfi -i "color=c=${BACKGROUND_COLOR}:size=${WIDTH}x${HEIGHT}:duration=${DURATION}:rate=25" \
