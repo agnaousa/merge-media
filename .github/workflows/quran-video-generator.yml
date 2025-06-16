@@ -10,10 +10,10 @@ on:
         description: "Path for the output video file"
         required: true
         default: "output/quran_video.mp4"
-      ayah_count:
-        description: "Number of ayahs to include (1-5)"
+      video_duration:
+        description: "Duration of the video in seconds"
         required: false
-        default: "3"
+        default: "30"
         type: number
       background_color:
         description: "Background color (default: black)"
@@ -67,119 +67,74 @@ jobs:
           echo "unique_output=$UNIQUE_OUTPUT" >> $GITHUB_OUTPUT
           echo "Generated unique output filename: $UNIQUE_OUTPUT"
 
-      - name: Fetch random Quran ayahs
+      - name: Fetch random Quran ayah
         id: quran
         run: |
-          echo "Fetching multiple random Quran ayahs..."
+          echo "Fetching random Quran ayah..."
           
-          # Get parameters
-          AYAH_COUNT="${{ github.event.inputs.ayah_count }}"
-          if [ "$AYAH_COUNT" -gt 5 ]; then
-            AYAH_COUNT=5
-            echo "Limited ayah count to maximum of 5"
-          fi
-          echo "Fetching $AYAH_COUNT ayahs"
-          
-          # Get random surah (1-114)
+          # Get random surah (1-114) and random ayah
           RANDOM_SURAH=$((RANDOM % 114 + 1))
           echo "Selected Surah: $RANDOM_SURAH"
           
           # Fetch surah info to get the number of ayahs
           SURAH_INFO=$(curl -s "https://api.alquran.cloud/v1/surah/$RANDOM_SURAH")
           TOTAL_AYAHS=$(echo "$SURAH_INFO" | jq -r '.data.numberOfAyahs')
-          SURAH_NAME=$(echo "$SURAH_INFO" | jq -r '.data.name')
-          SURAH_NAME_EN=$(echo "$SURAH_INFO" | jq -r '.data.englishName')
           echo "Total ayahs in this surah: $TOTAL_AYAHS"
-          echo "Surah: $SURAH_NAME ($SURAH_NAME_EN)"
           
-          # Get random starting ayah, ensuring we don't exceed surah length
-          MAX_START_AYAH=$((TOTAL_AYAHS - AYAH_COUNT + 1))
-          if [ "$MAX_START_AYAH" -lt 1 ]; then
-            MAX_START_AYAH=1
-            AYAH_COUNT=$TOTAL_AYAHS
-            echo "Adjusted ayah count to $AYAH_COUNT (surah length)"
-          fi
+          # Get random ayah number
+          RANDOM_AYAH=$((RANDOM % TOTAL_AYAHS + 1))
+          echo "Selected Ayah: $RANDOM_AYAH"
           
-          RANDOM_START_AYAH=$((RANDOM % MAX_START_AYAH + 1))
-          RANDOM_END_AYAH=$((RANDOM_START_AYAH + AYAH_COUNT - 1))
+          # Fetch the ayah with Arabic text and audio
+          echo "Fetching ayah $RANDOM_SURAH:$RANDOM_AYAH..."
           
-          echo "Selected Ayahs: $RANDOM_START_AYAH to $RANDOM_END_AYAH"
+          # Get Arabic text (simple Arabic text without audio)
+          ARABIC_RESPONSE=$(curl -s "https://api.alquran.cloud/v1/ayah/$RANDOM_SURAH:$RANDOM_AYAH/ar.asem")
+          ARABIC_TEXT=$(echo "$ARABIC_RESPONSE" | jq -r '.data.text')
+          SURAH_NAME=$(echo "$ARABIC_RESPONSE" | jq -r '.data.surah.name')
+          SURAH_NAME_EN=$(echo "$ARABIC_RESPONSE" | jq -r '.data.surah.englishName')
           
-          # Fetch multiple ayahs with Arabic text and audio
-          echo "Fetching ayahs $RANDOM_SURAH:$RANDOM_START_AYAH-$RANDOM_END_AYAH..."
+          # Try to get Yasser Al-Dosari audio specifically
+          echo "Trying to fetch Yasser Al-Dosari audio..."
+          YASSER_RESPONSE=$(curl -s "https://api.alquran.cloud/v1/ayah/$RANDOM_SURAH:$RANDOM_AYAH/ar.yasserdossari")
+          AUDIO_URL=$(echo "$YASSER_RESPONSE" | jq -r '.data.audio // ""')
           
-          # Get Arabic text (simple Arabic text)
-          ARABIC_RESPONSE=$(curl -s "https://api.alquran.cloud/v1/surah/$RANDOM_SURAH/ar.asem")
-          
-          # Extract the specific ayahs we want
-          COMBINED_ARABIC_TEXT=""
-          AUDIO_URLS=""
-          
-          for ((i=RANDOM_START_AYAH; i<=RANDOM_END_AYAH; i++)); do
-            # Get Arabic text for this ayah
-            AYAH_TEXT=$(echo "$ARABIC_RESPONSE" | jq -r ".data.ayahs[$((i-1))].text")
-            echo "Ayah $i: $AYAH_TEXT"
-            
-            if [ -n "$COMBINED_ARABIC_TEXT" ]; then
-              COMBINED_ARABIC_TEXT="$COMBINED_ARABIC_TEXT ۝ $AYAH_TEXT"
-            else
-              COMBINED_ARABIC_TEXT="$AYAH_TEXT"
-            fi
-            
-            # Try to get audio for each ayah
-            echo "Trying to fetch audio for ayah $i..."
-            YASSER_RESPONSE=$(curl -s "https://api.alquran.cloud/v1/ayah/$RANDOM_SURAH:$i/ar.yasserdossari")
-            AYAH_AUDIO_URL=$(echo "$YASSER_RESPONSE" | jq -r '.data.audio // ""')
-            
-            if [ -n "$AYAH_AUDIO_URL" ] && [ "$AYAH_AUDIO_URL" != "null" ] && [ "$AYAH_AUDIO_URL" != "" ]; then
-              if [ -n "$AUDIO_URLS" ]; then
-                AUDIO_URLS="$AUDIO_URLS,$AYAH_AUDIO_URL"
-              else
-                AUDIO_URLS="$AYAH_AUDIO_URL"
-              fi
-            fi
-          done
-          
-          # If Yasser Al-Dosari audio not available, try alternative reciters for the range
-          if [ -z "$AUDIO_URLS" ]; then
+          # If Yasser Al-Dosari audio not available, try alternative reciters
+          if [ -z "$AUDIO_URL" ] || [ "$AUDIO_URL" = "null" ] || [ "$AUDIO_URL" = "" ]; then
             echo "Yasser Al-Dosari audio not available, trying alternative reciters..."
             
-            # Try to get surah audio with timestamp ranges instead
-            ALAFASY_SURAH=$(curl -s "https://api.alquran.cloud/v1/surah/$RANDOM_SURAH/ar.alafasy")
-            FIRST_AYAH_AUDIO=$(echo "$ALAFASY_SURAH" | jq -r ".data.ayahs[$((RANDOM_START_AYAH-1))].audio // \"\"")
+            # Try Alafasy as backup
+            ALAFASY_RESPONSE=$(curl -s "https://api.alquran.cloud/v1/ayah/$RANDOM_SURAH:$RANDOM_AYAH/ar.alafasy")
+            AUDIO_URL=$(echo "$ALAFASY_RESPONSE" | jq -r '.data.audio // ""')
+            RECITER="Mishari Al-Afasy"
             
-            if [ -n "$FIRST_AYAH_AUDIO" ] && [ "$FIRST_AYAH_AUDIO" != "null" ]; then
-              AUDIO_URLS="$FIRST_AYAH_AUDIO"
-              RECITER="Mishari Al-Afasy"
-            else
-              RECITER="No Audio Available"
+            # If still no audio, try Abdurrahman As-Sudais
+            if [ -z "$AUDIO_URL" ] || [ "$AUDIO_URL" = "null" ] || [ "$AUDIO_URL" = "" ]; then
+              SUDAIS_RESPONSE=$(curl -s "https://api.alquran.cloud/v1/ayah/$RANDOM_SURAH:$RANDOM_AYAH/ar.abdurrahmaansudais")
+              AUDIO_URL=$(echo "$SUDAIS_RESPONSE" | jq -r '.data.audio // ""')
+              RECITER="Abdurrahman As-Sudais"
             fi
           else
             RECITER="Yasser Al-Dosari"
           fi
           
-          echo "Combined Arabic text: $COMBINED_ARABIC_TEXT"
-          echo "Audio URLs: $AUDIO_URLS"
+          echo "Surah: $SURAH_NAME ($SURAH_NAME_EN)"
+          echo "Arabic text: $ARABIC_TEXT"
+          echo "Audio URL: $AUDIO_URL"
           echo "Reciter: $RECITER"
           
           # Save to outputs
           echo "surah_number=$RANDOM_SURAH" >> $GITHUB_OUTPUT
-          echo "start_ayah=$RANDOM_START_AYAH" >> $GITHUB_OUTPUT
-          echo "end_ayah=$RANDOM_END_AYAH" >> $GITHUB_OUTPUT
-          echo "ayah_count=$AYAH_COUNT" >> $GITHUB_OUTPUT
+          echo "ayah_number=$RANDOM_AYAH" >> $GITHUB_OUTPUT
           echo "surah_name=$SURAH_NAME" >> $GITHUB_OUTPUT
           echo "surah_name_en=$SURAH_NAME_EN" >> $GITHUB_OUTPUT
-          echo "arabic_text=$COMBINED_ARABIC_TEXT" >> $GITHUB_OUTPUT
-          echo "audio_urls=$AUDIO_URLS" >> $GITHUB_OUTPUT
+          echo "arabic_text=$ARABIC_TEXT" >> $GITHUB_OUTPUT
+          echo "audio_url=$AUDIO_URL" >> $GITHUB_OUTPUT
           echo "reciter=$RECITER" >> $GITHUB_OUTPUT
           
           # Save texts to files for FFmpeg
-          echo "$COMBINED_ARABIC_TEXT" > temp/arabic_text.txt
-          if [ "$RANDOM_START_AYAH" = "$RANDOM_END_AYAH" ]; then
-            echo "[$SURAH_NAME_EN $RANDOM_SURAH:$RANDOM_START_AYAH]" > temp/reference.txt
-          else
-            echo "[$SURAH_NAME_EN $RANDOM_SURAH:$RANDOM_START_AYAH-$RANDOM_END_AYAH]" > temp/reference.txt
-          fi
+          echo "$ARABIC_TEXT" > temp/arabic_text.txt
+          echo "[$SURAH_NAME_EN $RANDOM_SURAH:$RANDOM_AYAH]" > temp/reference.txt
           
           # Split Arabic text using Quranic stops for natural grouping
           echo "Splitting Arabic text using Quranic stops..."
@@ -266,103 +221,50 @@ jobs:
             cat -n temp/word_groups.txt
           fi
 
-      - name: Download and merge Quran audio
+      - name: Download Quran audio
         id: audio
         run: |
-          AUDIO_URLS="${{ steps.quran.outputs.audio_urls }}"
+          AUDIO_URL="${{ steps.quran.outputs.audio_url }}"
           
-          if [ -n "$AUDIO_URLS" ] && [ "$AUDIO_URLS" != "null" ] && [ "$AUDIO_URLS" != "" ]; then
-            echo "Processing audio URLs: $AUDIO_URLS"
+          if [ -n "$AUDIO_URL" ] && [ "$AUDIO_URL" != "null" ] && [ "$AUDIO_URL" != "" ]; then
+            echo "Downloading audio from: $AUDIO_URL"
             echo "Reciter: ${{ steps.quran.outputs.reciter }}"
             
-            # Create array of URLs (split by comma)
-            IFS=',' read -ra URL_ARRAY <<< "$AUDIO_URLS"
-            AUDIO_COUNT=${#URL_ARRAY[@]}
-            echo "Found $AUDIO_COUNT audio files to download"
-            
-            # Download each audio file
-            AUDIO_FILES=""
-            DOWNLOAD_SUCCESS=false
-            
-            for i in "${!URL_ARRAY[@]}"; do
-              URL="${URL_ARRAY[$i]}"
-              AUDIO_FILE="temp/quran_audio_$((i+1)).mp3"
+            # Download with better error handling
+            if curl -L -f --retry 3 --retry-delay 2 -o temp/quran_audio.mp3 "$AUDIO_URL"; then
+              echo "Audio downloaded successfully"
               
-              echo "Downloading audio $((i+1))/$AUDIO_COUNT from: $URL"
+              # Check file size
+              AUDIO_SIZE=$(du -h temp/quran_audio.mp3 | cut -f1)
+              echo "Audio file size: $AUDIO_SIZE"
               
-              if curl -L -f --retry 3 --retry-delay 2 -o "$AUDIO_FILE" "$URL"; then
-                echo "Audio $((i+1)) downloaded successfully"
+              # Verify it's a valid audio file and get duration
+              if ffprobe -v quiet -show_entries format=duration -of csv=p=0 temp/quran_audio.mp3 > /dev/null 2>&1; then
+                AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 temp/quran_audio.mp3)
+                echo "Audio duration: $AUDIO_DURATION seconds"
+                echo "audio_path=temp/quran_audio.mp3" >> $GITHUB_OUTPUT
+                echo "audio_duration=$AUDIO_DURATION" >> $GITHUB_OUTPUT
+                echo "has_audio=true" >> $GITHUB_OUTPUT
                 
-                # Verify it's a valid audio file
-                if ffprobe -v quiet -show_entries format=duration -of csv=p=0 "$AUDIO_FILE" > /dev/null 2>&1; then
-                  AUDIO_SIZE=$(du -h "$AUDIO_FILE" | cut -f1)
-                  echo "Audio $((i+1)) file size: $AUDIO_SIZE"
-                  
-                  if [ -n "$AUDIO_FILES" ]; then
-                    AUDIO_FILES="$AUDIO_FILES -i $AUDIO_FILE"
-                  else
-                    AUDIO_FILES="-i $AUDIO_FILE"
-                  fi
-                  DOWNLOAD_SUCCESS=true
-                else
-                  echo "Downloaded file $((i+1)) is not a valid audio file"
-                  rm -f "$AUDIO_FILE"
-                fi
+                # Test audio properties
+                ffprobe -v quiet -print_format json -show_streams temp/quran_audio.mp3 | jq '.streams[0] | {codec_name, sample_rate, channels, duration}'
               else
-                echo "Failed to download audio $((i+1)) from URL: $URL"
+                echo "Downloaded file is not a valid audio file"
+                rm -f temp/quran_audio.mp3
+                echo "has_audio=false" >> $GITHUB_OUTPUT
+                echo "audio_duration=${{ github.event.inputs.video_duration }}" >> $GITHUB_OUTPUT
               fi
-            done
-            
-            if [ "$DOWNLOAD_SUCCESS" = true ]; then
-              # Concatenate audio files if multiple
-              if [ "$AUDIO_COUNT" -gt 1 ]; then
-                echo "Concatenating $AUDIO_COUNT audio files..."
-                
-                # Create concat filter
-                CONCAT_FILTER=""
-                for i in $(seq 0 $((AUDIO_COUNT-1))); do
-                  if [ -f "temp/quran_audio_$((i+1)).mp3" ]; then
-                    CONCAT_FILTER="${CONCAT_FILTER}[$i:a]"
-                  fi
-                done
-                CONCAT_FILTER="${CONCAT_FILTER}concat=n=$AUDIO_COUNT:v=0:a=1[outa]"
-                
-                # Concatenate audio files
-                eval "ffmpeg -y $AUDIO_FILES -filter_complex \"$CONCAT_FILTER\" -map \"[outa]\" temp/quran_audio_combined.mp3"
-                
-                if [ -f "temp/quran_audio_combined.mp3" ]; then
-                  FINAL_AUDIO_PATH="temp/quran_audio_combined.mp3"
-                  echo "Audio concatenation successful"
-                else
-                  # Fallback to first audio file
-                  FINAL_AUDIO_PATH="temp/quran_audio_1.mp3"
-                  echo "Audio concatenation failed, using first audio file"
-                fi
-              else
-                FINAL_AUDIO_PATH="temp/quran_audio_1.mp3"
-                echo "Using single audio file"
-              fi
-              
-              # Get final audio duration
-              AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "$FINAL_AUDIO_PATH")
-              echo "Final audio duration: $AUDIO_DURATION seconds"
-              
-              echo "audio_path=$FINAL_AUDIO_PATH" >> $GITHUB_OUTPUT
-              echo "audio_duration=$AUDIO_DURATION" >> $GITHUB_OUTPUT
-              echo "has_audio=true" >> $GITHUB_OUTPUT
-              
-              # Test final audio properties
-              ffprobe -v quiet -print_format json -show_streams "$FINAL_AUDIO_PATH" | jq '.streams[0] | {codec_name, sample_rate, channels, duration}'
             else
-              echo "No valid audio files downloaded"
+              echo "Failed to download audio from URL: $AUDIO_URL"
+              echo "Curl exit code: $?"
               echo "has_audio=false" >> $GITHUB_OUTPUT
-              echo "audio_duration=60" >> $GITHUB_OUTPUT
+              echo "audio_duration=${{ github.event.inputs.video_duration }}" >> $GITHUB_OUTPUT
             fi
           else
-            echo "No audio URLs available"
-            echo "Audio URLs value: '$AUDIO_URLS'"
+            echo "No audio URL available"
+            echo "Audio URL value: '$AUDIO_URL'"
             echo "has_audio=false" >> $GITHUB_OUTPUT
-            echo "audio_duration=60" >> $GITHUB_OUTPUT
+            echo "audio_duration=${{ github.event.inputs.video_duration }}" >> $GITHUB_OUTPUT
           fi
 
       - name: Create Quran video
@@ -559,11 +461,7 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes staged for commit"
           else
-            if [ "${{ steps.quran.outputs.start_ayah }}" = "${{ steps.quran.outputs.end_ayah }}" ]; then
-              git commit -m "Add Quran video: ${{ steps.quran.outputs.surah_name_en }} ${{ steps.quran.outputs.surah_number }}:${{ steps.quran.outputs.start_ayah }}"
-            else
-              git commit -m "Add Quran video: ${{ steps.quran.outputs.surah_name_en }} ${{ steps.quran.outputs.surah_number }}:${{ steps.quran.outputs.start_ayah }}-${{ steps.quran.outputs.end_ayah }}"
-            fi
+            git commit -m "Add Quran video: ${{ steps.quran.outputs.surah_name_en }} ${{ steps.quran.outputs.surah_number }}:${{ steps.quran.outputs.ayah_number }}"
             git push
             echo "Changes committed and pushed successfully"
           fi
@@ -618,12 +516,7 @@ jobs:
           echo "🕌 QURAN VIDEO GENERATION COMPLETE"
           echo "=================================="
           echo "Surah: ${{ steps.quran.outputs.surah_name_en }} (${{ steps.quran.outputs.surah_name }})"
-          if [ "${{ steps.quran.outputs.start_ayah }}" = "${{ steps.quran.outputs.end_ayah }}" ]; then
-            echo "Ayah: ${{ steps.quran.outputs.surah_number }}:${{ steps.quran.outputs.start_ayah }}"
-          else
-            echo "Ayahs: ${{ steps.quran.outputs.surah_number }}:${{ steps.quran.outputs.start_ayah }}-${{ steps.quran.outputs.end_ayah }} (${{ steps.quran.outputs.ayah_count }} ayahs)"
-          fi
-          echo "Reciter: ${{ steps.quran.outputs.reciter }}"
+          echo "Ayah: ${{ steps.quran.outputs.surah_number }}:${{ steps.quran.outputs.ayah_number }}"
           echo "Output: ${{ steps.output.outputs.unique_output }}"
           echo "File URL: ${{ steps.urls.outputs.file_url }}"
           echo "Raw URL: ${{ steps.urls.outputs.raw_url }}"
