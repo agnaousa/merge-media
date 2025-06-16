@@ -26,12 +26,7 @@ on:
       font_size_arabic:
         description: "Font size for Arabic text"
         required: false
-        default: "48"
-        type: number
-      font_size_translation:
-        description: "Font size for translation text"
-        required: false
-        default: "32"
+        default: "54"
         type: number
 
 jobs:
@@ -93,22 +88,17 @@ jobs:
           # Fetch the ayah with Arabic text and English translation
           echo "Fetching ayah $RANDOM_SURAH:$RANDOM_AYAH..."
           
-          # Get Arabic text
-          ARABIC_RESPONSE=$(curl -s "https://api.alquran.cloud/v1/ayah/$RANDOM_SURAH:$RANDOM_AYAH/ar.alafasy")
+          # Get Arabic text with Yasser Al-Dosari recitation
+          ARABIC_RESPONSE=$(curl -s "https://api.alquran.cloud/v1/ayah/$RANDOM_SURAH:$RANDOM_AYAH/ar.yasserdossari")
           ARABIC_TEXT=$(echo "$ARABIC_RESPONSE" | jq -r '.data.text')
           SURAH_NAME=$(echo "$ARABIC_RESPONSE" | jq -r '.data.surah.name')
           SURAH_NAME_EN=$(echo "$ARABIC_RESPONSE" | jq -r '.data.surah.englishName')
           
-          # Get English translation
-          ENGLISH_RESPONSE=$(curl -s "https://api.alquran.cloud/v1/ayah/$RANDOM_SURAH:$RANDOM_AYAH/en.asad")
-          ENGLISH_TEXT=$(echo "$ENGLISH_RESPONSE" | jq -r '.data.text')
-          
-          # Get audio URL (Alafasy recitation)
+          # Get audio URL (Yasser Al-Dosari recitation)
           AUDIO_URL=$(echo "$ARABIC_RESPONSE" | jq -r '.data.audio // ""')
           
           echo "Surah: $SURAH_NAME ($SURAH_NAME_EN)"
           echo "Arabic text: $ARABIC_TEXT"
-          echo "English translation: $ENGLISH_TEXT"
           echo "Audio URL: $AUDIO_URL"
           
           # Save to outputs
@@ -117,12 +107,10 @@ jobs:
           echo "surah_name=$SURAH_NAME" >> $GITHUB_OUTPUT
           echo "surah_name_en=$SURAH_NAME_EN" >> $GITHUB_OUTPUT
           echo "arabic_text=$ARABIC_TEXT" >> $GITHUB_OUTPUT
-          echo "english_text=$ENGLISH_TEXT" >> $GITHUB_OUTPUT
           echo "audio_url=$AUDIO_URL" >> $GITHUB_OUTPUT
           
           # Save texts to files for FFmpeg
           echo "$ARABIC_TEXT" > temp/arabic_text.txt
-          echo "$ENGLISH_TEXT" > temp/english_text.txt
           echo "[$SURAH_NAME_EN $RANDOM_SURAH:$RANDOM_AYAH]" > temp/reference.txt
 
       - name: Download Quran audio
@@ -160,7 +148,6 @@ jobs:
           BACKGROUND_COLOR="${{ github.event.inputs.background_color }}"
           TEXT_COLOR="${{ github.event.inputs.text_color }}"
           ARABIC_FONT_SIZE="${{ github.event.inputs.font_size_arabic }}"
-          ENGLISH_FONT_SIZE="${{ github.event.inputs.font_size_translation }}"
           
           # Video dimensions for 9:16 aspect ratio
           WIDTH=1080
@@ -190,30 +177,26 @@ jobs:
           
           echo "Using Arabic font: $ARABIC_FONT_PATH"
           
-          # Read texts and prepare them for display
+          # Read texts and escape them for FFmpeg
           ARABIC_TEXT=$(cat temp/arabic_text.txt)
-          ENGLISH_TEXT=$(cat temp/english_text.txt)
           REFERENCE=$(cat temp/reference.txt)
           
           # Escape special characters for FFmpeg
           ARABIC_TEXT=$(echo "$ARABIC_TEXT" | sed "s/'/'\\\\''/g" | sed 's/"/\\"/g')
-          ENGLISH_TEXT=$(echo "$ENGLISH_TEXT" | sed "s/'/'\\\\''/g" | sed 's/"/\\"/g')
           REFERENCE=$(echo "$REFERENCE" | sed "s/'/'\\\\''/g" | sed 's/"/\\"/g')
           
           echo "Arabic text: $ARABIC_TEXT"
-          echo "English text: $ENGLISH_TEXT"
           echo "Reference: $REFERENCE"
           
           # Generate video with or without audio using proper FFmpeg syntax
           if [ "${{ steps.audio.outputs.has_audio }}" = "true" ]; then
-            echo "Creating video with Quran audio..."
+            echo "Creating video with Quran audio (Yasser Al-Dosari)..."
             ffmpeg -y \
               -f lavfi -i "color=c=${BACKGROUND_COLOR}:size=${WIDTH}x${HEIGHT}:duration=${DURATION}:rate=25" \
               -i "${{ steps.audio.outputs.audio_path }}" \
               -filter_complex "
-                [0:v]drawtext=text='${ARABIC_TEXT}':fontfile='${ARABIC_FONT_PATH}':fontsize=${ARABIC_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=(h-text_h)/2-200:box=1:boxcolor=black@0.3:boxborderw=10[arabic];
-                [arabic]drawtext=text='${ENGLISH_TEXT}':fontsize=${ENGLISH_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=(h-text_h)/2+100:box=1:boxcolor=black@0.2:boxborderw=5[english];
-                [english]drawtext=text='${REFERENCE}':fontsize=28:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=h-text_h-80:alpha=0.8[final]
+                [0:v]drawtext=text='${ARABIC_TEXT}':fontfile='${ARABIC_FONT_PATH}':fontsize=${ARABIC_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.3:boxborderw=10[arabic];
+                [arabic]drawtext=text='${REFERENCE}':fontsize=32:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=h-text_h-120:alpha=0.8[final]
               " \
               -map "[final]" -map 1:a \
               -c:v libx264 -c:a aac \
@@ -225,9 +208,8 @@ jobs:
             ffmpeg -y \
               -f lavfi -i "color=c=${BACKGROUND_COLOR}:size=${WIDTH}x${HEIGHT}:duration=${DURATION}:rate=25" \
               -filter_complex "
-                [0:v]drawtext=text='${ARABIC_TEXT}':fontfile='${ARABIC_FONT_PATH}':fontsize=${ARABIC_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=(h-text_h)/2-200:box=1:boxcolor=black@0.3:boxborderw=10[arabic];
-                [arabic]drawtext=text='${ENGLISH_TEXT}':fontsize=${ENGLISH_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=(h-text_h)/2+100:box=1:boxcolor=black@0.2:boxborderw=5[english];
-                [english]drawtext=text='${REFERENCE}':fontsize=28:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=h-text_h-80:alpha=0.8[final]
+                [0:v]drawtext=text='${ARABIC_TEXT}':fontfile='${ARABIC_FONT_PATH}':fontsize=${ARABIC_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.3:boxborderw=10[arabic];
+                [arabic]drawtext=text='${REFERENCE}':fontsize=32:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=h-text_h-120:alpha=0.8[final]
               " \
               -map "[final]" \
               -c:v libx264 \
@@ -273,16 +255,14 @@ jobs:
 
       - name: Create video summary
         run: |
-          echo "# Quran Video Generated" > temp/summary.md
+          echo "# Quran Video Generated (Yasser Al-Dosari)" > temp/summary.md
           echo "" >> temp/summary.md
           echo "**Surah:** ${{ steps.quran.outputs.surah_name_en }} (${{ steps.quran.outputs.surah_name }})" >> temp/summary.md
           echo "**Ayah:** ${{ steps.quran.outputs.surah_number }}:${{ steps.quran.outputs.ayah_number }}" >> temp/summary.md
+          echo "**Reciter:** Yasser Al-Dosari" >> temp/summary.md
           echo "" >> temp/summary.md
           echo "**Arabic Text:**" >> temp/summary.md
           echo "${{ steps.quran.outputs.arabic_text }}" >> temp/summary.md
-          echo "" >> temp/summary.md
-          echo "**English Translation:**" >> temp/summary.md
-          echo "${{ steps.quran.outputs.english_text }}" >> temp/summary.md
           echo "" >> temp/summary.md
           echo "**Video File:** \`${{ steps.output.outputs.unique_output }}\`" >> temp/summary.md
           echo "**Has Audio:** ${{ steps.audio.outputs.has_audio }}" >> temp/summary.md
