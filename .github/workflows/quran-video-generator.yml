@@ -85,21 +85,43 @@ jobs:
           RANDOM_AYAH=$((RANDOM % TOTAL_AYAHS + 1))
           echo "Selected Ayah: $RANDOM_AYAH"
           
-          # Fetch the ayah with Arabic text and English translation
+          # Fetch the ayah with Arabic text and audio
           echo "Fetching ayah $RANDOM_SURAH:$RANDOM_AYAH..."
           
-          # Get Arabic text with Yasser Al-Dosari recitation
-          ARABIC_RESPONSE=$(curl -s "https://api.alquran.cloud/v1/ayah/$RANDOM_SURAH:$RANDOM_AYAH/ar.yasserdossari")
+          # Get Arabic text (simple Arabic text without audio)
+          ARABIC_RESPONSE=$(curl -s "https://api.alquran.cloud/v1/ayah/$RANDOM_SURAH:$RANDOM_AYAH/ar.asem")
           ARABIC_TEXT=$(echo "$ARABIC_RESPONSE" | jq -r '.data.text')
           SURAH_NAME=$(echo "$ARABIC_RESPONSE" | jq -r '.data.surah.name')
           SURAH_NAME_EN=$(echo "$ARABIC_RESPONSE" | jq -r '.data.surah.englishName')
           
-          # Get audio URL (Yasser Al-Dosari recitation)
-          AUDIO_URL=$(echo "$ARABIC_RESPONSE" | jq -r '.data.audio // ""')
+          # Try to get Yasser Al-Dosari audio specifically
+          echo "Trying to fetch Yasser Al-Dosari audio..."
+          YASSER_RESPONSE=$(curl -s "https://api.alquran.cloud/v1/ayah/$RANDOM_SURAH:$RANDOM_AYAH/ar.yasserdossari")
+          AUDIO_URL=$(echo "$YASSER_RESPONSE" | jq -r '.data.audio // ""')
+          
+          # If Yasser Al-Dosari audio not available, try alternative reciters
+          if [ -z "$AUDIO_URL" ] || [ "$AUDIO_URL" = "null" ] || [ "$AUDIO_URL" = "" ]; then
+            echo "Yasser Al-Dosari audio not available, trying alternative reciters..."
+            
+            # Try Alafasy as backup
+            ALAFASY_RESPONSE=$(curl -s "https://api.alquran.cloud/v1/ayah/$RANDOM_SURAH:$RANDOM_AYAH/ar.alafasy")
+            AUDIO_URL=$(echo "$ALAFASY_RESPONSE" | jq -r '.data.audio // ""')
+            RECITER="Mishari Al-Afasy"
+            
+            # If still no audio, try Abdurrahman As-Sudais
+            if [ -z "$AUDIO_URL" ] || [ "$AUDIO_URL" = "null" ] || [ "$AUDIO_URL" = "" ]; then
+              SUDAIS_RESPONSE=$(curl -s "https://api.alquran.cloud/v1/ayah/$RANDOM_SURAH:$RANDOM_AYAH/ar.abdurrahmaansudais")
+              AUDIO_URL=$(echo "$SUDAIS_RESPONSE" | jq -r '.data.audio // ""')
+              RECITER="Abdurrahman As-Sudais"
+            fi
+          else
+            RECITER="Yasser Al-Dosari"
+          fi
           
           echo "Surah: $SURAH_NAME ($SURAH_NAME_EN)"
           echo "Arabic text: $ARABIC_TEXT"
           echo "Audio URL: $AUDIO_URL"
+          echo "Reciter: $RECITER"
           
           # Save to outputs
           echo "surah_number=$RANDOM_SURAH" >> $GITHUB_OUTPUT
@@ -108,6 +130,7 @@ jobs:
           echo "surah_name_en=$SURAH_NAME_EN" >> $GITHUB_OUTPUT
           echo "arabic_text=$ARABIC_TEXT" >> $GITHUB_OUTPUT
           echo "audio_url=$AUDIO_URL" >> $GITHUB_OUTPUT
+          echo "reciter=$RECITER" >> $GITHUB_OUTPUT
           
           # Save texts to files for FFmpeg
           echo "$ARABIC_TEXT" > temp/arabic_text.txt
@@ -120,21 +143,41 @@ jobs:
           
           if [ -n "$AUDIO_URL" ] && [ "$AUDIO_URL" != "null" ] && [ "$AUDIO_URL" != "" ]; then
             echo "Downloading audio from: $AUDIO_URL"
-            if curl -L -o temp/quran_audio.mp3 "$AUDIO_URL"; then
+            echo "Reciter: ${{ steps.quran.outputs.reciter }}"
+            
+            # Download with better error handling
+            if curl -L -f --retry 3 --retry-delay 2 -o temp/quran_audio.mp3 "$AUDIO_URL"; then
               echo "Audio downloaded successfully"
-              # Get audio duration
-              AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 temp/quran_audio.mp3)
-              echo "Audio duration: $AUDIO_DURATION seconds"
-              echo "audio_path=temp/quran_audio.mp3" >> $GITHUB_OUTPUT
-              echo "audio_duration=$AUDIO_DURATION" >> $GITHUB_OUTPUT
-              echo "has_audio=true" >> $GITHUB_OUTPUT
+              
+              # Check file size
+              AUDIO_SIZE=$(du -h temp/quran_audio.mp3 | cut -f1)
+              echo "Audio file size: $AUDIO_SIZE"
+              
+              # Verify it's a valid audio file and get duration
+              if ffprobe -v quiet -show_entries format=duration -of csv=p=0 temp/quran_audio.mp3 > /dev/null 2>&1; then
+                AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 temp/quran_audio.mp3)
+                echo "Audio duration: $AUDIO_DURATION seconds"
+                echo "audio_path=temp/quran_audio.mp3" >> $GITHUB_OUTPUT
+                echo "audio_duration=$AUDIO_DURATION" >> $GITHUB_OUTPUT
+                echo "has_audio=true" >> $GITHUB_OUTPUT
+                
+                # Test audio properties
+                ffprobe -v quiet -print_format json -show_streams temp/quran_audio.mp3 | jq '.streams[0] | {codec_name, sample_rate, channels, duration}'
+              else
+                echo "Downloaded file is not a valid audio file"
+                rm -f temp/quran_audio.mp3
+                echo "has_audio=false" >> $GITHUB_OUTPUT
+                echo "audio_duration=${{ github.event.inputs.video_duration }}" >> $GITHUB_OUTPUT
+              fi
             else
-              echo "Failed to download audio, will use specified duration"
+              echo "Failed to download audio from URL: $AUDIO_URL"
+              echo "Curl exit code: $?"
               echo "has_audio=false" >> $GITHUB_OUTPUT
               echo "audio_duration=${{ github.event.inputs.video_duration }}" >> $GITHUB_OUTPUT
             fi
           else
-            echo "No audio URL available, using specified duration"
+            echo "No audio URL available"
+            echo "Audio URL value: '$AUDIO_URL'"
             echo "has_audio=false" >> $GITHUB_OUTPUT
             echo "audio_duration=${{ github.event.inputs.video_duration }}" >> $GITHUB_OUTPUT
           fi
@@ -190,21 +233,43 @@ jobs:
           
           # Generate video with or without audio using proper FFmpeg syntax
           if [ "${{ steps.audio.outputs.has_audio }}" = "true" ]; then
-            echo "Creating video with Quran audio (Yasser Al-Dosari)..."
-            ffmpeg -y \
-              -f lavfi -i "color=c=${BACKGROUND_COLOR}:size=${WIDTH}x${HEIGHT}:duration=${DURATION}:rate=25" \
-              -i "${{ steps.audio.outputs.audio_path }}" \
-              -filter_complex "
-                [0:v]drawtext=text='${ARABIC_TEXT}':fontfile='${ARABIC_FONT_PATH}':fontsize=${ARABIC_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.3:boxborderw=10[arabic];
-                [arabic]drawtext=text='${REFERENCE}':fontsize=32:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=h-text_h-120:alpha=0.8[final]
-              " \
-              -map "[final]" -map 1:a \
-              -c:v libx264 -c:a aac \
-              -r 25 -pix_fmt yuv420p \
-              -shortest \
-              "${{ steps.output.outputs.unique_output }}"
+            echo "Creating video with Quran audio (${{ steps.quran.outputs.reciter }})..."
+            echo "Audio file: ${{ steps.audio.outputs.audio_path }}"
+            echo "Audio duration: ${{ steps.audio.outputs.audio_duration }} seconds"
+            
+            # Verify audio file exists before processing
+            if [ -f "${{ steps.audio.outputs.audio_path }}" ]; then
+              ffmpeg -y \
+                -f lavfi -i "color=c=${BACKGROUND_COLOR}:size=${WIDTH}x${HEIGHT}:duration=${DURATION}:rate=25" \
+                -i "${{ steps.audio.outputs.audio_path }}" \
+                -filter_complex "
+                  [0:v]drawtext=text='${ARABIC_TEXT}':fontfile='${ARABIC_FONT_PATH}':fontsize=${ARABIC_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.3:boxborderw=10[arabic];
+                  [arabic]drawtext=text='${REFERENCE}':fontsize=32:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=h-text_h-120:alpha=0.8[final]
+                " \
+                -map "[final]" -map 1:a \
+                -c:v libx264 -c:a aac \
+                -r 25 -pix_fmt yuv420p \
+                -shortest \
+                -movflags +faststart \
+                "${{ steps.output.outputs.unique_output }}"
+            else
+              echo "ERROR: Audio file not found at ${{ steps.audio.outputs.audio_path }}"
+              echo "Creating silent video instead..."
+              ffmpeg -y \
+                -f lavfi -i "color=c=${BACKGROUND_COLOR}:size=${WIDTH}x${HEIGHT}:duration=${DURATION}:rate=25" \
+                -filter_complex "
+                  [0:v]drawtext=text='${ARABIC_TEXT}':fontfile='${ARABIC_FONT_PATH}':fontsize=${ARABIC_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.3:boxborderw=10[arabic];
+                  [arabic]drawtext=text='${REFERENCE}':fontsize=32:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=h-text_h-120:alpha=0.8[final]
+                " \
+                -map "[final]" \
+                -c:v libx264 \
+                -r 25 -pix_fmt yuv420p \
+                -t "${DURATION}" \
+                -movflags +faststart \
+                "${{ steps.output.outputs.unique_output }}"
+            fi
           else
-            echo "Creating silent video..."
+            echo "Creating silent video (no audio available)..."
             ffmpeg -y \
               -f lavfi -i "color=c=${BACKGROUND_COLOR}:size=${WIDTH}x${HEIGHT}:duration=${DURATION}:rate=25" \
               -filter_complex "
@@ -215,6 +280,7 @@ jobs:
               -c:v libx264 \
               -r 25 -pix_fmt yuv420p \
               -t "${DURATION}" \
+              -movflags +faststart \
               "${{ steps.output.outputs.unique_output }}"
           fi
           
@@ -255,11 +321,11 @@ jobs:
 
       - name: Create video summary
         run: |
-          echo "# Quran Video Generated (Yasser Al-Dosari)" > temp/summary.md
+          echo "# Quran Video Generated" > temp/summary.md
           echo "" >> temp/summary.md
           echo "**Surah:** ${{ steps.quran.outputs.surah_name_en }} (${{ steps.quran.outputs.surah_name }})" >> temp/summary.md
           echo "**Ayah:** ${{ steps.quran.outputs.surah_number }}:${{ steps.quran.outputs.ayah_number }}" >> temp/summary.md
-          echo "**Reciter:** Yasser Al-Dosari" >> temp/summary.md
+          echo "**Reciter:** ${{ steps.quran.outputs.reciter }}" >> temp/summary.md
           echo "" >> temp/summary.md
           echo "**Arabic Text:**" >> temp/summary.md
           echo "${{ steps.quran.outputs.arabic_text }}" >> temp/summary.md
