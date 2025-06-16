@@ -48,10 +48,10 @@ jobs:
           
           # Install Arabic fonts for Quran text
           sudo apt-get install -y fonts-noto fonts-liberation fonts-dejavu-core
-          sudo apt-get install -y fonts-arabic fonts-kacst fonts-kacst-one
+          sudo apt-get install -y fonts-kacst fonts-kacst-one fonts-hosny-amiri || true
           
           # Install additional Arabic fonts if available
-          sudo apt-get install -y fonts-amiri fonts-scheherazade || true
+          sudo apt-get install -y fonts-amiri fonts-scheherazade-new || true
           
           # List available Arabic fonts
           echo "Available Arabic fonts:"
@@ -167,33 +167,58 @@ jobs:
           HEIGHT=1920
           
           # Find the best Arabic font
-          ARABIC_FONT=$(fc-list :lang=ar | grep -i -E "(amiri|scheherazade|noto|kacst)" | head -1 | cut -d: -f2 | sed 's/^ *//' || echo "DejaVu Sans")
+          ARABIC_FONT=""
+          
+          # Try to find Arabic fonts in order of preference
+          if fc-list :lang=ar | grep -i "amiri" > /dev/null; then
+            ARABIC_FONT=$(fc-list :lang=ar | grep -i "amiri" | head -1 | cut -d: -f2 | sed 's/^ *//' | sed 's/,.*//')
+          elif fc-list :lang=ar | grep -i "scheherazade" > /dev/null; then
+            ARABIC_FONT=$(fc-list :lang=ar | grep -i "scheherazade" | head -1 | cut -d: -f2 | sed 's/^ *//' | sed 's/,.*//')
+          elif fc-list :lang=ar | grep -i "kacst" > /dev/null; then
+            ARABIC_FONT=$(fc-list :lang=ar | grep -i "kacst" | head -1 | cut -d: -f2 | sed 's/^ *//' | sed 's/,.*//')
+          elif fc-list :lang=ar | grep -i "noto" > /dev/null; then
+            ARABIC_FONT=$(fc-list :lang=ar | grep -i "noto" | head -1 | cut -d: -f2 | sed 's/^ *//' | sed 's/,.*//')
+          else
+            # Fallback to any Arabic font or system font
+            ARABIC_FONT=$(fc-list :lang=ar | head -1 | cut -d: -f2 | sed 's/^ *//' | sed 's/,.*//' || echo "DejaVu Sans")
+          fi
+          
+          # If no font found, use system default
+          if [ -z "$ARABIC_FONT" ]; then
+            ARABIC_FONT="DejaVu Sans"
+          fi
+          
           echo "Using Arabic font: $ARABIC_FONT"
           
-          # Read texts
+          # Read texts and prepare them for display
           ARABIC_TEXT=$(cat temp/arabic_text.txt)
           ENGLISH_TEXT=$(cat temp/english_text.txt)
           REFERENCE=$(cat temp/reference.txt)
           
-          # Calculate text positioning
-          # Arabic text in the center
-          ARABIC_Y="(h-text_h)/2-100"
-          # English text below Arabic
-          ENGLISH_Y="(h-text_h)/2+150"
-          # Reference at the bottom
-          REFERENCE_Y="h-text_h-50"
+          # Escape special characters for FFmpeg
+          ARABIC_TEXT=$(echo "$ARABIC_TEXT" | sed "s/'/'/g" | sed 's/"/\\"/g')
+          ENGLISH_TEXT=$(echo "$ENGLISH_TEXT" | sed "s/'/'/g" | sed 's/"/\\"/g')
+          REFERENCE=$(echo "$REFERENCE" | sed "s/'/'/g" | sed 's/"/\\"/g')
           
-          # Create the base video filter
+          # Calculate text positioning with better spacing
+          # Arabic text in the upper center
+          ARABIC_Y="(h-text_h)/2-200"
+          # English text below Arabic with proper spacing
+          ENGLISH_Y="(h-text_h)/2+100"
+          # Reference at the bottom
+          REFERENCE_Y="h-text_h-80"
+          
+          # Create the base video filter with better text handling
           VIDEO_FILTER="color=c=${BACKGROUND_COLOR}:size=${WIDTH}x${HEIGHT}:d=${DURATION}:r=25[bg]"
           
-          # Add Arabic text
-          VIDEO_FILTER="${VIDEO_FILTER}; [bg]drawtext=text='${ARABIC_TEXT}':fontfile='${ARABIC_FONT}':fontsize=${ARABIC_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=${ARABIC_Y}:enable='between(t,1,${DURATION})':text_align=center[arabic]"
+          # Add Arabic text with proper font and text wrapping
+          VIDEO_FILTER="${VIDEO_FILTER}; [bg]drawtext=text='${ARABIC_TEXT}':fontfile='${ARABIC_FONT}':fontsize=${ARABIC_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=${ARABIC_Y}:enable='between(t,1,${DURATION})':text_align=center:box=1:boxcolor=black@0.3:boxborderw=10[arabic]"
           
-          # Add English translation
-          VIDEO_FILTER="${VIDEO_FILTER}; [arabic]drawtext=text='${ENGLISH_TEXT}':fontsize=${ENGLISH_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=${ENGLISH_Y}:enable='between(t,1,${DURATION})':text_align=center[english]"
+          # Add English translation with text wrapping
+          VIDEO_FILTER="${VIDEO_FILTER}; [arabic]drawtext=text='${ENGLISH_TEXT}':fontsize=${ENGLISH_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=${ENGLISH_Y}:enable='between(t,1,${DURATION})':text_align=center:box=1:boxcolor=black@0.2:boxborderw=5[english]"
           
-          # Add reference (Surah:Ayah)
-          VIDEO_FILTER="${VIDEO_FILTER}; [english]drawtext=text='${REFERENCE}':fontsize=24:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=${REFERENCE_Y}:enable='between(t,1,${DURATION})':text_align=center[final]"
+          # Add reference (Surah:Ayah) with subtle styling
+          VIDEO_FILTER="${VIDEO_FILTER}; [english]drawtext=text='${REFERENCE}':fontsize=28:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=${REFERENCE_Y}:enable='between(t,1,${DURATION})':text_align=center:alpha=0.8[final]"
           
           echo "Video filter: $VIDEO_FILTER"
           
