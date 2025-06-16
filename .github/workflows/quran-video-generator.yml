@@ -166,29 +166,29 @@ jobs:
           WIDTH=1080
           HEIGHT=1920
           
-          # Find the best Arabic font
-          ARABIC_FONT=""
+          # Find the best Arabic font file path
+          ARABIC_FONT_PATH=""
           
           # Try to find Arabic fonts in order of preference
           if fc-list :lang=ar | grep -i "amiri" > /dev/null; then
-            ARABIC_FONT=$(fc-list :lang=ar | grep -i "amiri" | head -1 | cut -d: -f2 | sed 's/^ *//' | sed 's/,.*//')
+            ARABIC_FONT_PATH=$(fc-list :lang=ar | grep -i "amiri" | head -1 | cut -d: -f1)
           elif fc-list :lang=ar | grep -i "scheherazade" > /dev/null; then
-            ARABIC_FONT=$(fc-list :lang=ar | grep -i "scheherazade" | head -1 | cut -d: -f2 | sed 's/^ *//' | sed 's/,.*//')
+            ARABIC_FONT_PATH=$(fc-list :lang=ar | grep -i "scheherazade" | head -1 | cut -d: -f1)
           elif fc-list :lang=ar | grep -i "kacst" > /dev/null; then
-            ARABIC_FONT=$(fc-list :lang=ar | grep -i "kacst" | head -1 | cut -d: -f2 | sed 's/^ *//' | sed 's/,.*//')
+            ARABIC_FONT_PATH=$(fc-list :lang=ar | grep -i "kacst" | head -1 | cut -d: -f1)
           elif fc-list :lang=ar | grep -i "noto" > /dev/null; then
-            ARABIC_FONT=$(fc-list :lang=ar | grep -i "noto" | head -1 | cut -d: -f2 | sed 's/^ *//' | sed 's/,.*//')
+            ARABIC_FONT_PATH=$(fc-list :lang=ar | grep -i "noto" | head -1 | cut -d: -f1)
           else
-            # Fallback to any Arabic font or system font
-            ARABIC_FONT=$(fc-list :lang=ar | head -1 | cut -d: -f2 | sed 's/^ *//' | sed 's/,.*//' || echo "DejaVu Sans")
+            # Fallback to any font file
+            ARABIC_FONT_PATH=$(fc-list | head -1 | cut -d: -f1 || echo "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
           fi
           
           # If no font found, use system default
-          if [ -z "$ARABIC_FONT" ]; then
-            ARABIC_FONT="DejaVu Sans"
+          if [ -z "$ARABIC_FONT_PATH" ] || [ ! -f "$ARABIC_FONT_PATH" ]; then
+            ARABIC_FONT_PATH="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
           fi
           
-          echo "Using Arabic font: $ARABIC_FONT"
+          echo "Using Arabic font: $ARABIC_FONT_PATH"
           
           # Read texts and prepare them for display
           ARABIC_TEXT=$(cat temp/arabic_text.txt)
@@ -196,51 +196,43 @@ jobs:
           REFERENCE=$(cat temp/reference.txt)
           
           # Escape special characters for FFmpeg
-          ARABIC_TEXT=$(echo "$ARABIC_TEXT" | sed "s/'/'/g" | sed 's/"/\\"/g')
-          ENGLISH_TEXT=$(echo "$ENGLISH_TEXT" | sed "s/'/'/g" | sed 's/"/\\"/g')
-          REFERENCE=$(echo "$REFERENCE" | sed "s/'/'/g" | sed 's/"/\\"/g')
+          ARABIC_TEXT=$(echo "$ARABIC_TEXT" | sed "s/'/'\\\\''/g" | sed 's/"/\\"/g')
+          ENGLISH_TEXT=$(echo "$ENGLISH_TEXT" | sed "s/'/'\\\\''/g" | sed 's/"/\\"/g')
+          REFERENCE=$(echo "$REFERENCE" | sed "s/'/'\\\\''/g" | sed 's/"/\\"/g')
           
-          # Calculate text positioning with better spacing
-          # Arabic text in the upper center
-          ARABIC_Y="(h-text_h)/2-200"
-          # English text below Arabic with proper spacing
-          ENGLISH_Y="(h-text_h)/2+100"
-          # Reference at the bottom
-          REFERENCE_Y="h-text_h-80"
+          echo "Arabic text: $ARABIC_TEXT"
+          echo "English text: $ENGLISH_TEXT"
+          echo "Reference: $REFERENCE"
           
-          # Create the base video filter with better text handling
-          VIDEO_FILTER="color=c=${BACKGROUND_COLOR}:size=${WIDTH}x${HEIGHT}:d=${DURATION}:r=25[bg]"
-          
-          # Add Arabic text with proper font and text wrapping
-          VIDEO_FILTER="${VIDEO_FILTER}; [bg]drawtext=text='${ARABIC_TEXT}':fontfile='${ARABIC_FONT}':fontsize=${ARABIC_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=${ARABIC_Y}:enable='between(t,1,${DURATION})':text_align=center:box=1:boxcolor=black@0.3:boxborderw=10[arabic]"
-          
-          # Add English translation with text wrapping
-          VIDEO_FILTER="${VIDEO_FILTER}; [arabic]drawtext=text='${ENGLISH_TEXT}':fontsize=${ENGLISH_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=${ENGLISH_Y}:enable='between(t,1,${DURATION})':text_align=center:box=1:boxcolor=black@0.2:boxborderw=5[english]"
-          
-          # Add reference (Surah:Ayah) with subtle styling
-          VIDEO_FILTER="${VIDEO_FILTER}; [english]drawtext=text='${REFERENCE}':fontsize=28:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=${REFERENCE_Y}:enable='between(t,1,${DURATION})':text_align=center:alpha=0.8[final]"
-          
-          echo "Video filter: $VIDEO_FILTER"
-          
-          # Generate video with or without audio
+          # Generate video with or without audio using proper FFmpeg syntax
           if [ "${{ steps.audio.outputs.has_audio }}" = "true" ]; then
             echo "Creating video with Quran audio..."
             ffmpeg -y \
-              -f lavfi -i "$VIDEO_FILTER" \
+              -f lavfi -i "color=c=${BACKGROUND_COLOR}:size=${WIDTH}x${HEIGHT}:duration=${DURATION}:rate=25" \
               -i "${{ steps.audio.outputs.audio_path }}" \
+              -filter_complex "
+                [0:v]drawtext=text='${ARABIC_TEXT}':fontfile='${ARABIC_FONT_PATH}':fontsize=${ARABIC_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=(h-text_h)/2-200:box=1:boxcolor=black@0.3:boxborderw=10[arabic];
+                [arabic]drawtext=text='${ENGLISH_TEXT}':fontsize=${ENGLISH_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=(h-text_h)/2+100:box=1:boxcolor=black@0.2:boxborderw=5[english];
+                [english]drawtext=text='${REFERENCE}':fontsize=28:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=h-text_h-80:alpha=0.8[final]
+              " \
               -map "[final]" -map 1:a \
               -c:v libx264 -c:a aac \
               -r 25 -pix_fmt yuv420p \
-              -t "$DURATION" \
+              -shortest \
               "${{ steps.output.outputs.unique_output }}"
           else
             echo "Creating silent video..."
             ffmpeg -y \
-              -f lavfi -i "$VIDEO_FILTER" \
+              -f lavfi -i "color=c=${BACKGROUND_COLOR}:size=${WIDTH}x${HEIGHT}:duration=${DURATION}:rate=25" \
+              -filter_complex "
+                [0:v]drawtext=text='${ARABIC_TEXT}':fontfile='${ARABIC_FONT_PATH}':fontsize=${ARABIC_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=(h-text_h)/2-200:box=1:boxcolor=black@0.3:boxborderw=10[arabic];
+                [arabic]drawtext=text='${ENGLISH_TEXT}':fontsize=${ENGLISH_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=(h-text_h)/2+100:box=1:boxcolor=black@0.2:boxborderw=5[english];
+                [english]drawtext=text='${REFERENCE}':fontsize=28:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=h-text_h-80:alpha=0.8[final]
+              " \
               -map "[final]" \
               -c:v libx264 \
               -r 25 -pix_fmt yuv420p \
-              -t "$DURATION" \
+              -t "${DURATION}" \
               "${{ steps.output.outputs.unique_output }}"
           fi
           
