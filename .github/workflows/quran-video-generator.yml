@@ -135,6 +135,44 @@ jobs:
           # Save texts to files for FFmpeg
           echo "$ARABIC_TEXT" > temp/arabic_text.txt
           echo "[$SURAH_NAME_EN $RANDOM_SURAH:$RANDOM_AYAH]" > temp/reference.txt
+          
+          # Split Arabic text into groups of 3-4 words for animated display
+          echo "Splitting Arabic text into word groups..."
+          echo "$ARABIC_TEXT" | tr ' ' '\n' > temp/words.txt
+          
+          # Create word groups using a simple bash approach
+          WORD_COUNT=0
+          GROUP_COUNT=0
+          CURRENT_GROUP=""
+          
+          while IFS= read -r word; do
+            if [ -n "$word" ]; then
+              if [ $WORD_COUNT -eq 0 ]; then
+                CURRENT_GROUP="$word"
+              else
+                CURRENT_GROUP="$CURRENT_GROUP $word"
+              fi
+              WORD_COUNT=$((WORD_COUNT + 1))
+              
+              # Create group every 3-4 words
+              if [ $WORD_COUNT -ge 3 ]; then
+                GROUP_COUNT=$((GROUP_COUNT + 1))
+                echo "$CURRENT_GROUP" >> temp/word_groups.txt
+                echo "Group $GROUP_COUNT: $CURRENT_GROUP"
+                CURRENT_GROUP=""
+                WORD_COUNT=0
+              fi
+            fi
+          done < temp/words.txt
+          
+          # Add remaining words as final group
+          if [ -n "$CURRENT_GROUP" ]; then
+            GROUP_COUNT=$((GROUP_COUNT + 1))
+            echo "$CURRENT_GROUP" >> temp/word_groups.txt
+            echo "Group $GROUP_COUNT: $CURRENT_GROUP"
+          fi
+          
+          echo "Created $GROUP_COUNT word groups"
 
       - name: Download Quran audio
         id: audio
@@ -220,32 +258,63 @@ jobs:
           
           echo "Using Arabic font: $ARABIC_FONT_PATH"
           
-          # Read texts and escape them for FFmpeg
-          ARABIC_TEXT=$(cat temp/arabic_text.txt)
+          # Read texts and create animated word groups
           REFERENCE=$(cat temp/reference.txt)
           
-          # Escape special characters for FFmpeg
-          ARABIC_TEXT=$(echo "$ARABIC_TEXT" | sed "s/'/'\\\\''/g" | sed 's/"/\\"/g')
+          # Count word groups for timing calculation
+          TOTAL_GROUPS=$(wc -l < temp/word_groups.txt)
+          echo "Total word groups: $TOTAL_GROUPS"
+          
+          # Calculate timing for each group based on audio duration
+          GROUP_DURATION=$(echo "scale=2; $DURATION / $TOTAL_GROUPS" | bc)
+          echo "Duration per group: $GROUP_DURATION seconds"
+          
+          # Escape reference text for FFmpeg
           REFERENCE=$(echo "$REFERENCE" | sed "s/'/'\\\\''/g" | sed 's/"/\\"/g')
           
-          echo "Arabic text: $ARABIC_TEXT"
           echo "Reference: $REFERENCE"
+          echo "Creating animated text video..."
           
-          # Generate video with or without audio using proper FFmpeg syntax
+          # Generate video with animated word-by-word display
           if [ "${{ steps.audio.outputs.has_audio }}" = "true" ]; then
-            echo "Creating video with Quran audio (${{ steps.quran.outputs.reciter }})..."
+            echo "Creating animated video with Quran audio (${{ steps.quran.outputs.reciter }})..."
             echo "Audio file: ${{ steps.audio.outputs.audio_path }}"
             echo "Audio duration: ${{ steps.audio.outputs.audio_duration }} seconds"
+            
+            # Build animated text filter
+            FILTER_COMPLEX="[0:v]"
+            GROUP_NUM=0
+            
+            while IFS= read -r group; do
+              if [ -n "$group" ]; then
+                # Escape the text for FFmpeg
+                ESCAPED_GROUP=$(echo "$group" | sed "s/'/'\\\\''/g" | sed 's/"/\\"/g')
+                
+                # Calculate timing for this group
+                START_TIME=$(echo "scale=2; $GROUP_NUM * $GROUP_DURATION" | bc)
+                END_TIME=$(echo "scale=2; ($GROUP_NUM + 1) * $GROUP_DURATION" | bc)
+                
+                echo "Group $((GROUP_NUM + 1)): '$group' (${START_TIME}s - ${END_TIME}s)"
+                
+                # Add drawtext filter for this group
+                FILTER_COMPLEX="${FILTER_COMPLEX}drawtext=text='${ESCAPED_GROUP}':fontfile='${ARABIC_FONT_PATH}':fontsize=${ARABIC_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.4:boxborderw=15:enable='between(t,${START_TIME},${END_TIME})',"
+                
+                GROUP_NUM=$((GROUP_NUM + 1))
+              fi
+            done < temp/word_groups.txt
+            
+            # Remove trailing comma and add reference text
+            FILTER_COMPLEX="${FILTER_COMPLEX%,}[animated_text];"
+            FILTER_COMPLEX="${FILTER_COMPLEX}[animated_text]drawtext=text='${REFERENCE}':fontsize=28:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=h-text_h-100:alpha=0.7[final]"
+            
+            echo "Starting FFmpeg with animated text..."
             
             # Verify audio file exists before processing
             if [ -f "${{ steps.audio.outputs.audio_path }}" ]; then
               ffmpeg -y \
                 -f lavfi -i "color=c=${BACKGROUND_COLOR}:size=${WIDTH}x${HEIGHT}:duration=${DURATION}:rate=25" \
                 -i "${{ steps.audio.outputs.audio_path }}" \
-                -filter_complex "
-                  [0:v]drawtext=text='${ARABIC_TEXT}':fontfile='${ARABIC_FONT_PATH}':fontsize=${ARABIC_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.3:boxborderw=10[arabic];
-                  [arabic]drawtext=text='${REFERENCE}':fontsize=32:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=h-text_h-120:alpha=0.8[final]
-                " \
+                -filter_complex "${FILTER_COMPLEX}" \
                 -map "[final]" -map 1:a \
                 -c:v libx264 -c:a aac \
                 -r 25 -pix_fmt yuv420p \
@@ -254,13 +323,10 @@ jobs:
                 "${{ steps.output.outputs.unique_output }}"
             else
               echo "ERROR: Audio file not found at ${{ steps.audio.outputs.audio_path }}"
-              echo "Creating silent video instead..."
+              echo "Creating silent animated video instead..."
               ffmpeg -y \
                 -f lavfi -i "color=c=${BACKGROUND_COLOR}:size=${WIDTH}x${HEIGHT}:duration=${DURATION}:rate=25" \
-                -filter_complex "
-                  [0:v]drawtext=text='${ARABIC_TEXT}':fontfile='${ARABIC_FONT_PATH}':fontsize=${ARABIC_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.3:boxborderw=10[arabic];
-                  [arabic]drawtext=text='${REFERENCE}':fontsize=32:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=h-text_h-120:alpha=0.8[final]
-                " \
+                -filter_complex "${FILTER_COMPLEX}" \
                 -map "[final]" \
                 -c:v libx264 \
                 -r 25 -pix_fmt yuv420p \
@@ -269,13 +335,30 @@ jobs:
                 "${{ steps.output.outputs.unique_output }}"
             fi
           else
-            echo "Creating silent video (no audio available)..."
+            echo "Creating silent animated video (no audio available)..."
+            
+            # Build the same animated filter for silent video
+            FILTER_COMPLEX="[0:v]"
+            GROUP_NUM=0
+            
+            while IFS= read -r group; do
+              if [ -n "$group" ]; then
+                ESCAPED_GROUP=$(echo "$group" | sed "s/'/'\\\\''/g" | sed 's/"/\\"/g')
+                START_TIME=$(echo "scale=2; $GROUP_NUM * $GROUP_DURATION" | bc)
+                END_TIME=$(echo "scale=2; ($GROUP_NUM + 1) * $GROUP_DURATION" | bc)
+                
+                FILTER_COMPLEX="${FILTER_COMPLEX}drawtext=text='${ESCAPED_GROUP}':fontfile='${ARABIC_FONT_PATH}':fontsize=${ARABIC_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.4:boxborderw=15:enable='between(t,${START_TIME},${END_TIME})',"
+                
+                GROUP_NUM=$((GROUP_NUM + 1))
+              fi
+            done < temp/word_groups.txt
+            
+            FILTER_COMPLEX="${FILTER_COMPLEX%,}[animated_text];"
+            FILTER_COMPLEX="${FILTER_COMPLEX}[animated_text]drawtext=text='${REFERENCE}':fontsize=28:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=h-text_h-100:alpha=0.7[final]"
+            
             ffmpeg -y \
               -f lavfi -i "color=c=${BACKGROUND_COLOR}:size=${WIDTH}x${HEIGHT}:duration=${DURATION}:rate=25" \
-              -filter_complex "
-                [0:v]drawtext=text='${ARABIC_TEXT}':fontfile='${ARABIC_FONT_PATH}':fontsize=${ARABIC_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.3:boxborderw=10[arabic];
-                [arabic]drawtext=text='${REFERENCE}':fontsize=32:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=h-text_h-120:alpha=0.8[final]
-              " \
+              -filter_complex "${FILTER_COMPLEX}" \
               -map "[final]" \
               -c:v libx264 \
               -r 25 -pix_fmt yuv420p \
