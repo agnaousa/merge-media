@@ -136,43 +136,90 @@ jobs:
           echo "$ARABIC_TEXT" > temp/arabic_text.txt
           echo "[$SURAH_NAME_EN $RANDOM_SURAH:$RANDOM_AYAH]" > temp/reference.txt
           
-          # Split Arabic text into groups of 3-4 words for animated display
-          echo "Splitting Arabic text into word groups..."
-          echo "$ARABIC_TEXT" | tr ' ' '\n' > temp/words.txt
+          # Split Arabic text using Quranic stops for natural grouping
+          echo "Splitting Arabic text using Quranic stops..."
           
-          # Create word groups using a simple bash approach
-          WORD_COUNT=0
-          GROUP_COUNT=0
-          CURRENT_GROUP=""
+          # Common Quranic stop marks and pause indicators
+          # ۚ (small high seen) - minor pause
+          # ۛ (small high sad) - longer pause  
+          # ۗ (small high qaf) - pause allowed
+          # ۖ (small high meem) - pause preferred
+          # ۘ (small high noon) - pause not allowed
+          # Also split on punctuation and verse endings
           
-          while IFS= read -r word; do
-            if [ -n "$word" ]; then
-              if [ $WORD_COUNT -eq 0 ]; then
-                CURRENT_GROUP="$word"
-              else
-                CURRENT_GROUP="$CURRENT_GROUP $word"
+          # First, let's see what stop marks are in the text
+          echo "Original text: $ARABIC_TEXT"
+          echo "Analyzing stop marks in the text..."
+          
+          # Create groups based on Quranic stops and natural pauses
+          echo "$ARABIC_TEXT" > temp/full_text.txt
+          
+          # Split on various Quranic stop marks and natural break points
+          # Use sed to insert newlines at stop marks, then clean up
+          sed 's/۝//g' temp/full_text.txt | \
+          sed 's/ۚ/ ۚ\n/g' | \
+          sed 's/ۛ/ ۛ\n/g' | \
+          sed 's/ۗ/ ۗ\n/g' | \
+          sed 's/ۖ/ ۖ\n/g' | \
+          sed 's/ۘ/ ۘ/g' | \
+          sed 's/ۙ/ ۙ\n/g' | \
+          sed 's/ۜ/ ۜ\n/g' | \
+          sed 's/۞/ ۞\n/g' | \
+          sed 's/۩/ ۩\n/g' | \
+          sed 's/۬/ ۬\n/g' | \
+          sed 's/ۭ/ ۭ\n/g' > temp/split_by_stops.txt
+          
+          # Clean up empty lines and create meaningful groups
+          grep -v '^[[:space:]]*$' temp/split_by_stops.txt > temp/word_groups_raw.txt
+          
+          # If no stop marks found, fall back to word-based splitting
+          if [ ! -s temp/word_groups_raw.txt ] || [ $(wc -l < temp/word_groups_raw.txt) -eq 1 ]; then
+            echo "No Quranic stops found, using intelligent word grouping..."
+            
+            # Split into logical phrase groups (4-7 words per group)
+            echo "$ARABIC_TEXT" | tr ' ' '\n' > temp/words.txt
+            
+            WORD_COUNT=0
+            GROUP_COUNT=0
+            CURRENT_GROUP=""
+            
+            while IFS= read -r word; do
+              if [ -n "$word" ]; then
+                if [ $WORD_COUNT -eq 0 ]; then
+                  CURRENT_GROUP="$word"
+                else
+                  CURRENT_GROUP="$CURRENT_GROUP $word"
+                fi
+                WORD_COUNT=$((WORD_COUNT + 1))
+                
+                # Create groups of 4-7 words (vary for natural flow)
+                GROUP_SIZE=6
+                if [ $WORD_COUNT -ge $GROUP_SIZE ]; then
+                  GROUP_COUNT=$((GROUP_COUNT + 1))
+                  echo "$CURRENT_GROUP" >> temp/word_groups.txt
+                  echo "Group $GROUP_COUNT: $CURRENT_GROUP"
+                  CURRENT_GROUP=""
+                  WORD_COUNT=0
+                fi
               fi
-              WORD_COUNT=$((WORD_COUNT + 1))
-              
-              # Create group every 3-4 words
-              if [ $WORD_COUNT -ge 3 ]; then
-                GROUP_COUNT=$((GROUP_COUNT + 1))
-                echo "$CURRENT_GROUP" >> temp/word_groups.txt
-                echo "Group $GROUP_COUNT: $CURRENT_GROUP"
-                CURRENT_GROUP=""
-                WORD_COUNT=0
-              fi
+            done < temp/words.txt
+            
+            # Add remaining words as final group
+            if [ -n "$CURRENT_GROUP" ]; then
+              GROUP_COUNT=$((GROUP_COUNT + 1))
+              echo "$CURRENT_GROUP" >> temp/word_groups.txt
+              echo "Group $GROUP_COUNT: $CURRENT_GROUP"
             fi
-          done < temp/words.txt
-          
-          # Add remaining words as final group
-          if [ -n "$CURRENT_GROUP" ]; then
-            GROUP_COUNT=$((GROUP_COUNT + 1))
-            echo "$CURRENT_GROUP" >> temp/word_groups.txt
-            echo "Group $GROUP_COUNT: $CURRENT_GROUP"
+            
+            echo "Created $GROUP_COUNT word-based groups"
+          else
+            # Use stop-mark based groups
+            cp temp/word_groups_raw.txt temp/word_groups.txt
+            GROUP_COUNT=$(wc -l < temp/word_groups.txt)
+            
+            echo "Created $GROUP_COUNT groups based on Quranic stops:"
+            cat -n temp/word_groups.txt
           fi
-          
-          echo "Created $GROUP_COUNT word groups"
 
       - name: Download Quran audio
         id: audio
@@ -402,22 +449,6 @@ jobs:
           name: quran-video
           path: ${{ steps.output.outputs.unique_output }}
 
-      - name: Create video summary
-        run: |
-          echo "# Quran Video Generated" > temp/summary.md
-          echo "" >> temp/summary.md
-          echo "**Surah:** ${{ steps.quran.outputs.surah_name_en }} (${{ steps.quran.outputs.surah_name }})" >> temp/summary.md
-          echo "**Ayah:** ${{ steps.quran.outputs.surah_number }}:${{ steps.quran.outputs.ayah_number }}" >> temp/summary.md
-          echo "**Reciter:** ${{ steps.quran.outputs.reciter }}" >> temp/summary.md
-          echo "" >> temp/summary.md
-          echo "**Arabic Text:**" >> temp/summary.md
-          echo "${{ steps.quran.outputs.arabic_text }}" >> temp/summary.md
-          echo "" >> temp/summary.md
-          echo "**Video File:** \`${{ steps.output.outputs.unique_output }}\`" >> temp/summary.md
-          echo "**Has Audio:** ${{ steps.audio.outputs.has_audio }}" >> temp/summary.md
-          
-          cat temp/summary.md
-
       - name: Commit video file
         run: |
           git config user.name "github-actions"
@@ -425,12 +456,6 @@ jobs:
           
           # Add the generated file to git
           git add "${{ steps.output.outputs.unique_output }}"
-          
-          # Add summary if exists
-          if [ -f "temp/summary.md" ]; then
-            cp temp/summary.md "output/$(basename "${{ steps.output.outputs.unique_output }}" .mp4).md"
-            git add "output/$(basename "${{ steps.output.outputs.unique_output }}" .mp4).md"
-          fi
           
           # Check if there are any staged changes
           if git diff --staged --quiet; then
@@ -474,14 +499,6 @@ jobs:
               echo "Removing old Quran videos:"
               echo "$OLD_FILES"
               echo "$OLD_FILES" | xargs rm -f
-              
-              # Also remove corresponding markdown files
-              for file in $OLD_FILES; do
-                md_file="${file%.mp4}.md"
-                if [ -f "$md_file" ]; then
-                  rm -f "$md_file"
-                fi
-              done
               
               # Commit cleanup
               if [ -n "$(git status --porcelain)" ]; then
