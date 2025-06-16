@@ -1,0 +1,361 @@
+name: Generate Quran Video
+
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      output_path:
+        description: "Path for the output video file"
+        required: true
+        default: "output/quran_video.mp4"
+      video_duration:
+        description: "Duration of the video in seconds"
+        required: false
+        default: "30"
+        type: number
+      background_color:
+        description: "Background color (default: black)"
+        required: false
+        default: "black"
+      text_color:
+        description: "Text color for Arabic and translation"
+        required: false
+        default: "white"
+      font_size_arabic:
+        description: "Font size for Arabic text"
+        required: false
+        default: "48"
+        type: number
+      font_size_translation:
+        description: "Font size for translation text"
+        required: false
+        default: "32"
+        type: number
+
+jobs:
+  generate-quran-video:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg jq curl bc
+          
+          # Install Arabic fonts for Quran text
+          sudo apt-get install -y fonts-noto fonts-liberation fonts-dejavu-core
+          sudo apt-get install -y fonts-arabic fonts-kacst fonts-kacst-one
+          
+          # Install additional Arabic fonts if available
+          sudo apt-get install -y fonts-amiri fonts-scheherazade || true
+          
+          # List available Arabic fonts
+          echo "Available Arabic fonts:"
+          fc-list :lang=ar | head -10
+
+      - name: Create output directory
+        run: |
+          mkdir -p output
+          mkdir -p temp
+
+      - name: Generate unique output filename
+        id: output
+        run: |
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S_%s)
+          OUTPUT_DIR=$(dirname "${{ github.event.inputs.output_path }}")
+          OUTPUT_BASENAME=$(basename "${{ github.event.inputs.output_path }}" .mp4)
+          UNIQUE_OUTPUT="${OUTPUT_DIR}/${OUTPUT_BASENAME}_${TIMESTAMP}.mp4"
+          echo "unique_output=$UNIQUE_OUTPUT" >> $GITHUB_OUTPUT
+          echo "Generated unique output filename: $UNIQUE_OUTPUT"
+
+      - name: Fetch random Quran ayah
+        id: quran
+        run: |
+          echo "Fetching random Quran ayah..."
+          
+          # Get random surah (1-114) and random ayah
+          RANDOM_SURAH=$((RANDOM % 114 + 1))
+          echo "Selected Surah: $RANDOM_SURAH"
+          
+          # Fetch surah info to get the number of ayahs
+          SURAH_INFO=$(curl -s "https://api.alquran.cloud/v1/surah/$RANDOM_SURAH")
+          TOTAL_AYAHS=$(echo "$SURAH_INFO" | jq -r '.data.numberOfAyahs')
+          echo "Total ayahs in this surah: $TOTAL_AYAHS"
+          
+          # Get random ayah number
+          RANDOM_AYAH=$((RANDOM % TOTAL_AYAHS + 1))
+          echo "Selected Ayah: $RANDOM_AYAH"
+          
+          # Fetch the ayah with Arabic text and English translation
+          echo "Fetching ayah $RANDOM_SURAH:$RANDOM_AYAH..."
+          
+          # Get Arabic text
+          ARABIC_RESPONSE=$(curl -s "https://api.alquran.cloud/v1/ayah/$RANDOM_SURAH:$RANDOM_AYAH/ar.alafasy")
+          ARABIC_TEXT=$(echo "$ARABIC_RESPONSE" | jq -r '.data.text')
+          SURAH_NAME=$(echo "$ARABIC_RESPONSE" | jq -r '.data.surah.name')
+          SURAH_NAME_EN=$(echo "$ARABIC_RESPONSE" | jq -r '.data.surah.englishName')
+          
+          # Get English translation
+          ENGLISH_RESPONSE=$(curl -s "https://api.alquran.cloud/v1/ayah/$RANDOM_SURAH:$RANDOM_AYAH/en.asad")
+          ENGLISH_TEXT=$(echo "$ENGLISH_RESPONSE" | jq -r '.data.text')
+          
+          # Get audio URL (Alafasy recitation)
+          AUDIO_URL=$(echo "$ARABIC_RESPONSE" | jq -r '.data.audio // ""')
+          
+          echo "Surah: $SURAH_NAME ($SURAH_NAME_EN)"
+          echo "Arabic text: $ARABIC_TEXT"
+          echo "English translation: $ENGLISH_TEXT"
+          echo "Audio URL: $AUDIO_URL"
+          
+          # Save to outputs
+          echo "surah_number=$RANDOM_SURAH" >> $GITHUB_OUTPUT
+          echo "ayah_number=$RANDOM_AYAH" >> $GITHUB_OUTPUT
+          echo "surah_name=$SURAH_NAME" >> $GITHUB_OUTPUT
+          echo "surah_name_en=$SURAH_NAME_EN" >> $GITHUB_OUTPUT
+          echo "arabic_text=$ARABIC_TEXT" >> $GITHUB_OUTPUT
+          echo "english_text=$ENGLISH_TEXT" >> $GITHUB_OUTPUT
+          echo "audio_url=$AUDIO_URL" >> $GITHUB_OUTPUT
+          
+          # Save texts to files for FFmpeg
+          echo "$ARABIC_TEXT" > temp/arabic_text.txt
+          echo "$ENGLISH_TEXT" > temp/english_text.txt
+          echo "[$SURAH_NAME_EN $RANDOM_SURAH:$RANDOM_AYAH]" > temp/reference.txt
+
+      - name: Download Quran audio
+        id: audio
+        run: |
+          AUDIO_URL="${{ steps.quran.outputs.audio_url }}"
+          
+          if [ -n "$AUDIO_URL" ] && [ "$AUDIO_URL" != "null" ] && [ "$AUDIO_URL" != "" ]; then
+            echo "Downloading audio from: $AUDIO_URL"
+            if curl -L -o temp/quran_audio.mp3 "$AUDIO_URL"; then
+              echo "Audio downloaded successfully"
+              # Get audio duration
+              AUDIO_DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 temp/quran_audio.mp3)
+              echo "Audio duration: $AUDIO_DURATION seconds"
+              echo "audio_path=temp/quran_audio.mp3" >> $GITHUB_OUTPUT
+              echo "audio_duration=$AUDIO_DURATION" >> $GITHUB_OUTPUT
+              echo "has_audio=true" >> $GITHUB_OUTPUT
+            else
+              echo "Failed to download audio, will use specified duration"
+              echo "has_audio=false" >> $GITHUB_OUTPUT
+              echo "audio_duration=${{ github.event.inputs.video_duration }}" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "No audio URL available, using specified duration"
+            echo "has_audio=false" >> $GITHUB_OUTPUT
+            echo "audio_duration=${{ github.event.inputs.video_duration }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Quran video
+        run: |
+          echo "Creating Quran video..."
+          
+          # Video parameters
+          DURATION="${{ steps.audio.outputs.audio_duration }}"
+          BACKGROUND_COLOR="${{ github.event.inputs.background_color }}"
+          TEXT_COLOR="${{ github.event.inputs.text_color }}"
+          ARABIC_FONT_SIZE="${{ github.event.inputs.font_size_arabic }}"
+          ENGLISH_FONT_SIZE="${{ github.event.inputs.font_size_translation }}"
+          
+          # Video dimensions for 9:16 aspect ratio
+          WIDTH=1080
+          HEIGHT=1920
+          
+          # Find the best Arabic font
+          ARABIC_FONT=$(fc-list :lang=ar | grep -i -E "(amiri|scheherazade|noto|kacst)" | head -1 | cut -d: -f2 | sed 's/^ *//' || echo "DejaVu Sans")
+          echo "Using Arabic font: $ARABIC_FONT"
+          
+          # Read texts
+          ARABIC_TEXT=$(cat temp/arabic_text.txt)
+          ENGLISH_TEXT=$(cat temp/english_text.txt)
+          REFERENCE=$(cat temp/reference.txt)
+          
+          # Calculate text positioning
+          # Arabic text in the center
+          ARABIC_Y="(h-text_h)/2-100"
+          # English text below Arabic
+          ENGLISH_Y="(h-text_h)/2+150"
+          # Reference at the bottom
+          REFERENCE_Y="h-text_h-50"
+          
+          # Create the base video filter
+          VIDEO_FILTER="color=c=${BACKGROUND_COLOR}:size=${WIDTH}x${HEIGHT}:d=${DURATION}:r=25[bg]"
+          
+          # Add Arabic text
+          VIDEO_FILTER="${VIDEO_FILTER}; [bg]drawtext=text='${ARABIC_TEXT}':fontfile='${ARABIC_FONT}':fontsize=${ARABIC_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=${ARABIC_Y}:enable='between(t,1,${DURATION})':text_align=center[arabic]"
+          
+          # Add English translation
+          VIDEO_FILTER="${VIDEO_FILTER}; [arabic]drawtext=text='${ENGLISH_TEXT}':fontsize=${ENGLISH_FONT_SIZE}:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=${ENGLISH_Y}:enable='between(t,1,${DURATION})':text_align=center[english]"
+          
+          # Add reference (Surah:Ayah)
+          VIDEO_FILTER="${VIDEO_FILTER}; [english]drawtext=text='${REFERENCE}':fontsize=24:fontcolor=${TEXT_COLOR}:x=(w-text_w)/2:y=${REFERENCE_Y}:enable='between(t,1,${DURATION})':text_align=center[final]"
+          
+          echo "Video filter: $VIDEO_FILTER"
+          
+          # Generate video with or without audio
+          if [ "${{ steps.audio.outputs.has_audio }}" = "true" ]; then
+            echo "Creating video with Quran audio..."
+            ffmpeg -y \
+              -f lavfi -i "$VIDEO_FILTER" \
+              -i "${{ steps.audio.outputs.audio_path }}" \
+              -map "[final]" -map 1:a \
+              -c:v libx264 -c:a aac \
+              -r 25 -pix_fmt yuv420p \
+              -t "$DURATION" \
+              "${{ steps.output.outputs.unique_output }}"
+          else
+            echo "Creating silent video..."
+            ffmpeg -y \
+              -f lavfi -i "$VIDEO_FILTER" \
+              -map "[final]" \
+              -c:v libx264 \
+              -r 25 -pix_fmt yuv420p \
+              -t "$DURATION" \
+              "${{ steps.output.outputs.unique_output }}"
+          fi
+          
+          echo "Video creation completed!"
+          echo "Output file size: $(du -h "${{ steps.output.outputs.unique_output }}" | cut -f1)"
+
+      - name: Verify video output
+        run: |
+          if [ -f "${{ steps.output.outputs.unique_output }}" ]; then
+            echo "Video file created successfully!"
+            echo "File size: $(du -h "${{ steps.output.outputs.unique_output }}" | cut -f1)"
+            
+            # Get video information
+            ffprobe -v quiet -print_format json -show_format -show_streams "${{ steps.output.outputs.unique_output }}" > temp/video_info.json
+            
+            WIDTH=$(jq -r '.streams[] | select(.codec_type=="video") | .width' temp/video_info.json)
+            HEIGHT=$(jq -r '.streams[] | select(.codec_type=="video") | .height' temp/video_info.json)
+            DURATION=$(jq -r '.format.duration' temp/video_info.json)
+            
+            echo "Video dimensions: ${WIDTH}x${HEIGHT}"
+            echo "Video duration: ${DURATION} seconds"
+            echo "Aspect ratio: $(echo "scale=2; $HEIGHT/$WIDTH" | bc)"
+            
+            # Verify it's 9:16 aspect ratio
+            ASPECT_CHECK=$(echo "scale=2; $HEIGHT/$WIDTH" | bc)
+            echo "Expected aspect ratio: 1.78 (9:16)"
+            echo "Actual aspect ratio: $ASPECT_CHECK"
+          else
+            echo "Error: Video file was not created!"
+            exit 1
+          fi
+
+      - name: Upload video as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: quran-video
+          path: ${{ steps.output.outputs.unique_output }}
+
+      - name: Create video summary
+        run: |
+          echo "# Quran Video Generated" > temp/summary.md
+          echo "" >> temp/summary.md
+          echo "**Surah:** ${{ steps.quran.outputs.surah_name_en }} (${{ steps.quran.outputs.surah_name }})" >> temp/summary.md
+          echo "**Ayah:** ${{ steps.quran.outputs.surah_number }}:${{ steps.quran.outputs.ayah_number }}" >> temp/summary.md
+          echo "" >> temp/summary.md
+          echo "**Arabic Text:**" >> temp/summary.md
+          echo "${{ steps.quran.outputs.arabic_text }}" >> temp/summary.md
+          echo "" >> temp/summary.md
+          echo "**English Translation:**" >> temp/summary.md
+          echo "${{ steps.quran.outputs.english_text }}" >> temp/summary.md
+          echo "" >> temp/summary.md
+          echo "**Video File:** \`${{ steps.output.outputs.unique_output }}\`" >> temp/summary.md
+          echo "**Has Audio:** ${{ steps.audio.outputs.has_audio }}" >> temp/summary.md
+          
+          cat temp/summary.md
+
+      - name: Commit video file
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          
+          # Add the generated file to git
+          git add "${{ steps.output.outputs.unique_output }}"
+          
+          # Add summary if exists
+          if [ -f "temp/summary.md" ]; then
+            cp temp/summary.md "output/$(basename "${{ steps.output.outputs.unique_output }}" .mp4).md"
+            git add "output/$(basename "${{ steps.output.outputs.unique_output }}" .mp4).md"
+          fi
+          
+          # Check if there are any staged changes
+          if git diff --staged --quiet; then
+            echo "No changes staged for commit"
+          else
+            git commit -m "Add Quran video: ${{ steps.quran.outputs.surah_name_en }} ${{ steps.quran.outputs.surah_number }}:${{ steps.quran.outputs.ayah_number }}"
+            git push
+            echo "Changes committed and pushed successfully"
+          fi
+
+      - name: Generate output URLs
+        id: urls
+        run: |
+          OUTPUT_FILE="${{ steps.output.outputs.unique_output }}"
+          REPO_URL="https://github.com/${{ github.repository }}"
+          BRANCH="${{ github.ref_name }}"
+          FILE_URL="${REPO_URL}/blob/${BRANCH}/${OUTPUT_FILE}"
+          RAW_URL="https://raw.githubusercontent.com/${{ github.repository }}/${BRANCH}/${OUTPUT_FILE}"
+          
+          echo "file_url=${FILE_URL}" >> $GITHUB_OUTPUT
+          echo "raw_url=${RAW_URL}" >> $GITHUB_OUTPUT
+          echo "filename=$(basename "${OUTPUT_FILE}")" >> $GITHUB_OUTPUT
+          
+          echo "Generated URLs:"
+          echo "File URL: ${FILE_URL}"
+          echo "Raw URL: ${RAW_URL}"
+
+      - name: Cleanup temporary files
+        run: |
+          echo "Cleaning up temporary files..."
+          
+          if [ -d "temp" ]; then
+            rm -rf temp
+            echo "Removed temp directory"
+          fi
+          
+          # Remove old Quran videos (keep only last 10)
+          if [ -d "output" ]; then
+            OLD_FILES=$(find output -name "quran_video_*.mp4" -type f | sort -r | tail -n +11)
+            if [ -n "$OLD_FILES" ]; then
+              echo "Removing old Quran videos:"
+              echo "$OLD_FILES"
+              echo "$OLD_FILES" | xargs rm -f
+              
+              # Also remove corresponding markdown files
+              for file in $OLD_FILES; do
+                md_file="${file%.mp4}.md"
+                if [ -f "$md_file" ]; then
+                  rm -f "$md_file"
+                fi
+              done
+              
+              # Commit cleanup
+              if [ -n "$(git status --porcelain)" ]; then
+                git add -A
+                git commit -m "Auto-cleanup: Remove old Quran videos [skip ci]"
+                git push
+                echo "Cleanup committed"
+              fi
+            fi
+          fi
+
+      - name: Display final summary
+        run: |
+          echo "=================================="
+          echo "🕌 QURAN VIDEO GENERATION COMPLETE"
+          echo "=================================="
+          echo "Surah: ${{ steps.quran.outputs.surah_name_en }} (${{ steps.quran.outputs.surah_name }})"
+          echo "Ayah: ${{ steps.quran.outputs.surah_number }}:${{ steps.quran.outputs.ayah_number }}"
+          echo "Output: ${{ steps.output.outputs.unique_output }}"
+          echo "File URL: ${{ steps.urls.outputs.file_url }}"
+          echo "Raw URL: ${{ steps.urls.outputs.raw_url }}"
+          echo "Has Audio: ${{ steps.audio.outputs.has_audio }}"
+          echo "=================================="
